@@ -7,8 +7,19 @@ Monorepo del reto de innovación.
 ```
 reto-innovacion/
 ├── backend/    # API en FastAPI (Python)
-└── frontend/   # Aplicación web en Vue
+├── frontend/   # Aplicación web en Vue
+└── dev.py      # levanta ambos proyectos a la vez
 ```
+
+## Levantar todo de una vez
+
+Con las dependencias ya instaladas (ver secciones de abajo):
+
+```bash
+python dev.py
+```
+
+Levanta el backend en `http://localhost:8000` y el frontend en `http://localhost:5173`; `Ctrl+C` detiene ambos.
 
 ## Backend
 
@@ -18,7 +29,7 @@ API construida con [FastAPI](https://fastapi.tiangolo.com/).
 cd backend
 python -m venv .venv
 .venv\Scripts\activate    # Windows
-pip install -r requirements.txt
+pip install -e ".[dev]"
 uvicorn app.main:app --reload
 ```
 
