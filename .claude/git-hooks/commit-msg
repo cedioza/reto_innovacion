@@ -1,0 +1,34 @@
+#!/bin/sh
+# Valida que el mensaje de commit cumpla Conventional Commits.
+# Bloquea el commit (exit 1) si no cumple. Ver .claude/rules/commit-standards.md
+msg_file="$1"
+first_line="$(head -n1 "$msg_file")"
+
+# Excepciones: merges, reverts automaticos, fixup/squash de rebase
+case "$first_line" in
+  Merge*|Revert*|fixup!*|squash!*) exit 0 ;;
+esac
+
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9._-]+\))?!?: .+$'
+
+if ! printf '%s' "$first_line" | grep -Eq "$pattern"; then
+  echo "" >&2
+  echo "COMMIT BLOQUEADO: el mensaje no cumple Conventional Commits." >&2
+  echo "" >&2
+  echo "  Formato:  <tipo>(<alcance opcional>): <descripcion>" >&2
+  echo "  Tipos:    feat fix docs style refactor perf test build ci chore revert" >&2
+  echo "  Ejemplo:  feat(back): add POST /messages endpoint" >&2
+  echo "" >&2
+  echo "  Tu mensaje: $first_line" >&2
+  echo "  Regla completa: .claude/rules/commit-standards.md" >&2
+  exit 1
+fi
+
+if [ "$(printf '%s' "$first_line" | wc -c)" -gt 72 ]; then
+  echo "" >&2
+  echo "COMMIT BLOQUEADO: la primera linea supera 72 caracteres." >&2
+  echo "  Tu mensaje: $first_line" >&2
+  exit 1
+fi
+
+exit 0
