@@ -54,3 +54,18 @@ INTEGRATIONS: dict[str, Integration] = {
         required_env=["RESEND_API_KEY", "RESEND_TEST_TO"],
     ),
 }
+
+
+def _register_checks() -> None:
+    """Enlaza el `check()` de cada módulo de integración a su entrada en el registro.
+
+    Import diferido (dentro de la función) para evitar ciclos: los módulos de
+    check importan `app.schemas.health`, no este paquete.
+    """
+    from app.services.integrations import gemini, whatsapp
+
+    INTEGRATIONS["gemini"].check = gemini.check
+    INTEGRATIONS["whatsapp"].check = whatsapp.check
+
+
+_register_checks()
