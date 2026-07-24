@@ -19,6 +19,8 @@ INTEGRATION_SETTINGS_FIELDS = [
     "whatsapp_token",
     "whatsapp_phone_id",
     "whatsapp_test_to",
+    "ycloud_api_key",
+    "ycloud_whatsapp_from",
     "database_url",
     "resend_api_key",
     "resend_test_to",
@@ -79,6 +81,7 @@ def test_gemini_configured_when_key_present(monkeypatch):
 
 def test_whatsapp_requires_all_three_vars(monkeypatch):
     _clear_integration_settings(monkeypatch)
+    monkeypatch.setattr(settings, "whatsapp_provider", "meta")
     monkeypatch.setattr(settings, "whatsapp_token", "test-token")
     monkeypatch.setattr(settings, "whatsapp_phone_id", "test-phone-id")
     # whatsapp_test_to sigue vacío: solo 2 de 3 vars configuradas.
@@ -323,6 +326,7 @@ def test_post_postgres_not_configured(monkeypatch):
 
 
 def test_post_whatsapp_success(monkeypatch):
+    monkeypatch.setattr(settings, "whatsapp_provider", "meta")
     monkeypatch.setattr(settings, "whatsapp_token", "test-token")
     monkeypatch.setattr(settings, "whatsapp_phone_id", "123456")
     monkeypatch.setattr(settings, "whatsapp_test_to", "573001234567")
@@ -353,6 +357,7 @@ def test_post_whatsapp_success(monkeypatch):
 
 
 def test_post_whatsapp_meta_error(monkeypatch):
+    monkeypatch.setattr(settings, "whatsapp_provider", "meta")
     monkeypatch.setattr(settings, "whatsapp_token", "invalid-token")
     monkeypatch.setattr(settings, "whatsapp_phone_id", "123456")
     monkeypatch.setattr(settings, "whatsapp_test_to", "573001234567")
@@ -377,6 +382,7 @@ def test_post_whatsapp_meta_error(monkeypatch):
 
 
 def test_post_whatsapp_network_error(monkeypatch):
+    monkeypatch.setattr(settings, "whatsapp_provider", "meta")
     monkeypatch.setattr(settings, "whatsapp_token", "test-token")
     monkeypatch.setattr(settings, "whatsapp_phone_id", "123456")
     monkeypatch.setattr(settings, "whatsapp_test_to", "573001234567")
@@ -390,6 +396,7 @@ def test_post_whatsapp_network_error(monkeypatch):
 
 
 def test_post_whatsapp_not_configured(monkeypatch):
+    monkeypatch.setattr(settings, "whatsapp_provider", "meta")
     monkeypatch.setattr(settings, "whatsapp_token", "test-token")
     monkeypatch.setattr(settings, "whatsapp_phone_id", "123456")
     monkeypatch.setattr(settings, "whatsapp_test_to", "")
@@ -401,6 +408,18 @@ def test_post_whatsapp_not_configured(monkeypatch):
     assert body["status"] == "error"
     assert "no configurado" in body["details"]["detail"]
     assert "WHATSAPP_TEST_TO" in body["details"]["detail"]
+
+
+def test_post_whatsapp_ycloud_check_only_validates_configuration(monkeypatch):
+    monkeypatch.setattr(settings, "whatsapp_provider", "ycloud")
+    monkeypatch.setattr(settings, "ycloud_api_key", "ycloud-key")
+    monkeypatch.setattr(settings, "ycloud_whatsapp_from", "57300999")
+    monkeypatch.setattr(whatsapp_service.httpx, "Client", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no request")))
+
+    response = client.post("/health/integrations/whatsapp")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["ok"] is True
 
 
 def test_post_resend_success(monkeypatch):

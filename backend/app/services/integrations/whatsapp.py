@@ -27,6 +27,25 @@ def check() -> IntegrationCheckResult:
     """Envía un mensaje de prueba vía WhatsApp Cloud API y devuelve el resultado."""
     from app.core.config import settings
 
+    if settings.whatsapp_provider.lower() == "ycloud":
+        missing = [
+            env_name
+            for value, env_name in (
+                (settings.ycloud_api_key, "YCLOUD_API_KEY"),
+                (settings.ycloud_whatsapp_from, "YCLOUD_WHATSAPP_FROM"),
+            )
+            if not value
+        ]
+        return IntegrationCheckResult(
+            service="whatsapp",
+            ok=not missing,
+            detail=(
+                "configuración YCloud disponible"
+                if not missing
+                else f"no configurado: falta(n) {', '.join(missing)}"
+            ),
+        )
+
     missing = [
         env_name
         for setting_name, env_name in _REQUIRED_ENV_BY_SETTING.items()

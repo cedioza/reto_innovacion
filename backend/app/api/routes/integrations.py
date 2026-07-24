@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.helpers.responses import error_response, success_response
 from app.schemas.health import IntegrationStatus
-from app.services.integrations import INTEGRATIONS, is_configured
+from app.services.integrations import INTEGRATIONS, is_configured, required_env_for
 
 router = APIRouter(prefix="/health/integrations", tags=["health"])
 
@@ -16,7 +16,7 @@ def list_integrations_status() -> dict:
         IntegrationStatus(
             service=integration.name,
             configured=is_configured(integration),
-            required_env=integration.required_env,
+            required_env=required_env_for(integration),
         ).model_dump()
         for integration in INTEGRATIONS.values()
     ]

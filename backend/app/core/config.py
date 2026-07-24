@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     resend_test_to: str = ""
     telegram_bot_token: str = ""
     telegram_test_chat_id: str = ""
+    whatsapp_verify_token: str = "colsubsidio-reto-2026"
+    telegram_webhook_secret: str = ""
+    whatsapp_provider: str = "ycloud"
+    ycloud_api_key: str = ""
+    ycloud_whatsapp_from: str = ""
+    ycloud_webhook_secret: str = ""
+    ycloud_allow_unsigned_webhooks: bool = False
+    ycloud_webhook_tolerance_seconds: int = 300
 
 
 settings = Settings()

@@ -1,0 +1,70 @@
+from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel
+
+
+class ConversationState(str, Enum):
+    COLLECTING_PROFILE = "collecting_profile"
+    RECOMMENDATION_READY = "recommendation_ready"
+    QUOTE_READY = "quote_ready"
+    AWAITING_CONSENT = "awaiting_consent"
+    READY_FOR_PAYMENT = "ready_for_payment"
+
+
+class Message(BaseModel):
+    role: str
+    content: str
+
+
+class ProfileData(BaseModel):
+    property_type: Optional[str] = None
+    zone: Optional[str] = None
+    stratum: Optional[int] = None
+    age_range: Optional[str] = None
+    has_family: Optional[bool] = None
+
+
+class Recommendation(BaseModel):
+    product_id: str
+    product_name: str
+    reasons: list[dict]
+
+
+class QuoteDetail(BaseModel):
+    currency: str = "COP"
+    base_amount: float
+    adjustments: list[dict] = []
+    monthly_premium: float
+    coverage_details: list[str]
+    exclusions: list[str]
+
+
+class ConsentRequest(BaseModel):
+    consent_given: bool
+
+
+class ConsentedApplication(BaseModel):
+    session_id: str
+    product_id: str
+    profile: ProfileData
+    recommendation: Recommendation
+    quote: QuoteDetail
+    consent_timestamp: str
+    state: ConversationState = ConversationState.READY_FOR_PAYMENT
+
+
+class ConversationCreate(BaseModel):
+    document_number: Optional[str] = None
+    message: Optional[Message] = None
+
+
+class ConversationResponse(BaseModel):
+    session_id: str
+    state: ConversationState
+    messages: list[Message] = []
+    profile: Optional[ProfileData] = None
+    recommendation: Optional[Recommendation] = None
+    quote: Optional[QuoteDetail] = None
+    application: Optional[ConsentedApplication] = None
+    next_action: str

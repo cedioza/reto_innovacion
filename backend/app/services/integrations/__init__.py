@@ -29,7 +29,11 @@ def is_configured(integration: Integration) -> bool:
     """
     from app.core.config import settings
 
-    return all(getattr(settings, attr, "") != "" for attr in integration.required_settings)
+    if integration.name == "whatsapp" and settings.whatsapp_provider.lower() == "meta":
+        required_settings = ["whatsapp_token", "whatsapp_phone_id", "whatsapp_test_to"]
+    else:
+        required_settings = integration.required_settings
+    return all(getattr(settings, attr, "") != "" for attr in required_settings)
 
 
 INTEGRATIONS: dict[str, Integration] = {
@@ -40,8 +44,8 @@ INTEGRATIONS: dict[str, Integration] = {
     ),
     "whatsapp": Integration(
         name="whatsapp",
-        required_settings=["whatsapp_token", "whatsapp_phone_id", "whatsapp_test_to"],
-        required_env=["WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_TEST_TO"],
+        required_settings=["ycloud_api_key", "ycloud_whatsapp_from"],
+        required_env=["YCLOUD_API_KEY", "YCLOUD_WHATSAPP_FROM"],
     ),
     "postgres": Integration(
         name="postgres",
@@ -79,3 +83,13 @@ def _register_checks() -> None:
 
 
 _register_checks()
+
+
+def required_env_for(integration: Integration) -> list[str]:
+    """Return provider-specific configuration names for the WhatsApp entry."""
+    if integration.name == "whatsapp":
+        from app.core.config import settings
+
+        if settings.whatsapp_provider.lower() == "meta":
+            return ["WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_TEST_TO"]
+    return integration.required_env

@@ -3,8 +3,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.conversations import router as conversations_router
 from app.api.routes.health import router as health_router
 from app.api.routes.integrations import router as integrations_router
+from app.api.routes.webhooks import router as webhooks_router
 from app.core.config import settings
 
 app = FastAPI(title="Reto Innovación API", version="0.1.0")
@@ -17,5 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(conversations_router)
 app.include_router(health_router)
 app.include_router(integrations_router)
+app.include_router(webhooks_router)
