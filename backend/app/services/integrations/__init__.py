@@ -62,10 +62,13 @@ def _register_checks() -> None:
     Import diferido (dentro de la función) para evitar ciclos: los módulos de
     check importan `app.schemas.health`, no este paquete.
     """
-    from app.services.integrations import gemini, whatsapp
+    from app.services.integrations import database, gemini, whatsapp
+    from app.services.integrations import resend as resend_service
 
     INTEGRATIONS["gemini"].check = gemini.check
     INTEGRATIONS["whatsapp"].check = whatsapp.check
+    INTEGRATIONS["postgres"].check = database.check
+    INTEGRATIONS["resend"].check = resend_service.check
 
 
 _register_checks()

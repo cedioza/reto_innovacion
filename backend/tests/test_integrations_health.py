@@ -5,7 +5,10 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
+from app.services.integrations import INTEGRATIONS, Integration
+from app.services.integrations import database as database_service
 from app.services.integrations import gemini as gemini_service
+from app.services.integrations import resend as resend_service
 from app.services.integrations import whatsapp as whatsapp_service
 
 client = TestClient(app)
@@ -218,13 +221,102 @@ def test_post_unknown_service_returns_404():
     assert body["status"] == "error"
 
 
-def test_post_postgres_not_implemented_yet():
-    response = client.post("/health/integrations/postgres")
+def test_post_check_not_implemented_yet():
+    """Cubre el branch 503 "check no implementado" del router, con una
+    integración fake registrada temporalmente (todas las reales ya tienen
+    `check` implementado)."""
+    INTEGRATIONS["fake"] = Integration(name="fake", required_settings=[], required_env=[])
+    try:
+        response = client.post("/health/integrations/fake")
+    finally:
+        del INTEGRATIONS["fake"]
 
     assert response.status_code == 503
     body = response.json()
     assert body["status"] == "error"
     assert "no implementado" in body["message"]
+
+
+class _FakeCursor:
+    """Sustituto de un cursor de psycopg: recuerda la última query ejecutada."""
+
+    def __init__(self) -> None:
+        self._last_query: str | None = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, query, *args, **kwargs):
+        self._last_query = query
+
+    def fetchone(self):
+        if self._last_query == "SELECT 1":
+            return (1,)
+        if self._last_query == "SHOW server_version":
+            return ("16.4",)
+        return None
+
+
+class _FakeConnection:
+    """Sustituto de una conexión de psycopg usada como context manager."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def cursor(self):
+        return _FakeCursor()
+
+
+def test_post_postgres_success(monkeypatch):
+    monkeypatch.setattr(settings, "database_url", "postgresql://user:pass@localhost/db")
+    monkeypatch.setattr(
+        database_service.psycopg,
+        "connect",
+        lambda *a, **k: _FakeConnection(),
+    )
+
+    response = client.post("/health/integrations/postgres")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["data"]["service"] == "postgres"
+    assert body["data"]["ok"] is True
+    assert "latency_ms" in body["data"]
+    assert body["data"]["latency_ms"] is not None
+
+
+def test_post_postgres_operational_error(monkeypatch):
+    monkeypatch.setattr(settings, "database_url", "postgresql://user:pass@localhost/db")
+
+    def _raise(*args, **kwargs):
+        raise database_service.psycopg.OperationalError("connection refused")
+
+    monkeypatch.setattr(database_service.psycopg, "connect", _raise)
+
+    response = client.post("/health/integrations/postgres")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "error"
+
+
+def test_post_postgres_not_configured(monkeypatch):
+    monkeypatch.setattr(settings, "database_url", "")
+
+    response = client.post("/health/integrations/postgres")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "error"
+    assert "no configurado" in body["details"]["detail"]
+    assert "DATABASE_URL" in body["details"]["detail"]
 
 
 def test_post_whatsapp_success(monkeypatch):
@@ -306,3 +398,66 @@ def test_post_whatsapp_not_configured(monkeypatch):
     assert body["status"] == "error"
     assert "no configurado" in body["details"]["detail"]
     assert "WHATSAPP_TEST_TO" in body["details"]["detail"]
+
+
+def test_post_resend_success(monkeypatch):
+    monkeypatch.setattr(settings, "resend_api_key", "test-resend-key")
+    monkeypatch.setattr(settings, "resend_test_to", "test@example.com")
+
+    captured: list = []
+    fake_response = _FakeResponse(200, "{}", json_data={"id": "re_TEST123"})
+    monkeypatch.setattr(
+        resend_service.httpx,
+        "Client",
+        lambda *a, **k: _FakeClient(fake_response, captured),
+    )
+
+    response = client.post("/health/integrations/resend")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["data"]["service"] == "resend"
+    assert body["data"]["ok"] is True
+    assert "re_TEST123" in body["data"]["detail"]
+
+    assert len(captured) == 1
+    sent_payload = captured[0]["kwargs"]["json"]
+    assert sent_payload["to"] == ["test@example.com"]
+    assert sent_payload["from"] == "onboarding@resend.dev"
+
+
+def test_post_resend_error_status(monkeypatch):
+    monkeypatch.setattr(settings, "resend_api_key", "invalid-key")
+    monkeypatch.setattr(settings, "resend_test_to", "test@example.com")
+
+    fake_response = _FakeResponse(
+        401,
+        text='{"message": "API key is invalid"}',
+        json_data={"message": "API key is invalid"},
+    )
+    monkeypatch.setattr(
+        resend_service.httpx,
+        "Client",
+        lambda *a, **k: _FakeClient(fake_response),
+    )
+
+    response = client.post("/health/integrations/resend")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "error"
+    assert "API key is invalid" in body["details"]["detail"]
+
+
+def test_post_resend_not_configured(monkeypatch):
+    monkeypatch.setattr(settings, "resend_api_key", "test-resend-key")
+    monkeypatch.setattr(settings, "resend_test_to", "")
+
+    response = client.post("/health/integrations/resend")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "error"
+    assert "no configurado" in body["details"]["detail"]
+    assert "RESEND_TEST_TO" in body["details"]["detail"]
