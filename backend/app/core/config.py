@@ -8,5 +8,13 @@ class Settings(BaseSettings):
 
     frontend_url: str = "http://localhost:5173"
 
+    gemini_api_key: str = ""
+    whatsapp_token: str = ""
+    whatsapp_phone_id: str = ""
+    whatsapp_test_to: str = ""
+    database_url: str = ""
+    resend_api_key: str = ""
+    resend_test_to: str = ""
+
 
 settings = Settings()
