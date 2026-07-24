@@ -115,8 +115,9 @@ WhatsApp reales crecerán sobre estos mismos módulos.
 | 3 | Check activo de WhatsApp (mensaje de prueba) | backend | Aditivo | 25m | `feat(back): add whatsapp test message health check` |
 | 4 | Check activo de Postgres | backend | Aditivo | 20m | `feat(back): add postgres connectivity health check` |
 | 5 | Check activo de Resend | backend | Aditivo | 15m | `feat(back): add resend email health check` |
+| 6 | Check activo de Telegram (plan B de canal) | backend | Aditivo | 15m | `feat(back): add telegram test message health check` |
 
-Total: ~1h50m. Si el tiempo aprieta, las fases 4 y 5 son recortables sin afectar a las
+Total: ~2h5m. Si el tiempo aprieta, las fases 4–6 son recortables sin afectar a las
 demás (cada check es independiente).
 
 ---
@@ -325,5 +326,42 @@ terminado"; el usuario decidió incluirla en esta pasada — decisión resuelta 
 **Pruebas / verificación**: pytest verde; manual: correo de prueba llega al buzón.
 **Riesgos**: free tier 100 correos/día — de sobra para checks manuales.
 
-🛑 **CHECKPOINT** — fin del plan.
+🛑 **CHECKPOINT** — Detente aquí. No inicies la Fase 6 sin aprobación del usuario.
 **Commit sugerido**: `feat(back): add resend email health check`
+
+---
+
+## Fase 6 — Check activo de Telegram (plan B de canal)
+
+_Agregada el 2026-07-23 a pedido del usuario tras cerrar las fases 1–5. Telegram es el
+plan B de canal del brain (`Canal y costos WhatsApp.md`, servicio #8) — tener su check
+listo hace que activar el plan B sea cuestión de minutos._
+
+**Proyecto**: backend
+**Objetivo**: `POST /health/integrations/telegram` **envía un mensaje de prueba real**
+vía Bot API (`https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage`) al chat
+`TELEGRAM_TEST_CHAT_ID`. Sin dependencias nuevas (httpx ya está).
+**Archivos afectados**:
+- [config.py](backend/app/core/config.py) — campos `telegram_bot_token`,
+  `telegram_test_chat_id` (default `""`).
+- [.env.example](backend/.env.example) — `TELEGRAM_BOT_TOKEN` (de @BotFather),
+  `TELEGRAM_TEST_CHAT_ID` (chat del equipo; se obtiene escribiéndole al bot y mirando
+  `getUpdates`).
+- `backend/app/services/integrations/telegram.py` — **nuevo**, mismo patrón.
+- `backend/app/services/integrations/__init__.py` — registrar `"telegram"`.
+- `backend/tests/test_integrations_health.py` — ampliar.
+
+**Impacto en contrato API (front↔back)**: No (aditivo; el GET lista un servicio más).
+**Acciones**:
+1. Extender `Settings` y `.env.example`.
+2. Implementar `telegram.py`: sin token/chat_id → "no configurado"; éxito
+   (`ok: true` en el JSON) → `message_id` en el detail; error → `description` del error
+   de Telegram. **Ojo: el token va en la URL** — jamás incluir la URL en los mensajes
+   de error.
+3. Registrar en `INTEGRATIONS` y ampliar tests (mocks, mismos casos que WhatsApp).
+
+**Pruebas / verificación**: pytest verde; manual: el mensaje llega al chat de Telegram.
+**Riesgos**: ninguno relevante — Bot API es gratis y sin límites prácticos para esto.
+
+🛑 **CHECKPOINT** — fin del plan.
+**Commit sugerido**: `feat(back): add telegram test message health check`

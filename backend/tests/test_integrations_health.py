@@ -9,6 +9,7 @@ from app.services.integrations import INTEGRATIONS, Integration
 from app.services.integrations import database as database_service
 from app.services.integrations import gemini as gemini_service
 from app.services.integrations import resend as resend_service
+from app.services.integrations import telegram as telegram_service
 from app.services.integrations import whatsapp as whatsapp_service
 
 client = TestClient(app)
@@ -21,6 +22,8 @@ INTEGRATION_SETTINGS_FIELDS = [
     "database_url",
     "resend_api_key",
     "resend_test_to",
+    "telegram_bot_token",
+    "telegram_test_chat_id",
 ]
 
 
@@ -45,7 +48,7 @@ def test_list_integrations_returns_all_services(monkeypatch):
     assert body["status"] == "success"
 
     services = {item["service"]: item for item in body["data"]}
-    assert set(services.keys()) == {"gemini", "whatsapp", "postgres", "resend"}
+    assert set(services.keys()) == {"gemini", "whatsapp", "postgres", "resend", "telegram"}
     for item in services.values():
         assert "configured" in item
         assert "required_env" in item
@@ -59,7 +62,7 @@ def test_all_unconfigured_when_settings_empty(monkeypatch):
 
     body = response.json()
     services = {item["service"]: item for item in body["data"]}
-    for service in ("gemini", "whatsapp", "postgres", "resend"):
+    for service in ("gemini", "whatsapp", "postgres", "resend", "telegram"):
         assert services[service]["configured"] is False
 
 
@@ -461,3 +464,97 @@ def test_post_resend_not_configured(monkeypatch):
     assert body["status"] == "error"
     assert "no configurado" in body["details"]["detail"]
     assert "RESEND_TEST_TO" in body["details"]["detail"]
+
+
+class _TokenLeakingRaisingClient:
+    """Sustituto de httpx.Client que simula un ConnectError cuya excepción
+    incluye la URL solicitada (y por tanto el token) en su mensaje, tal como
+    hace httpx de verdad."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def post(self, *args, **kwargs):
+        raise httpx.ConnectError("boom https://api.telegram.org/botSECRET/sendMessage")
+
+
+def test_post_telegram_success(monkeypatch):
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-bot-token")
+    monkeypatch.setattr(settings, "telegram_test_chat_id", "123456789")
+
+    captured: list = []
+    fake_response = _FakeResponse(
+        200, "{}", json_data={"ok": True, "result": {"message_id": 42}}
+    )
+    monkeypatch.setattr(
+        telegram_service.httpx,
+        "Client",
+        lambda *a, **k: _FakeClient(fake_response, captured),
+    )
+
+    response = client.post("/health/integrations/telegram")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["data"]["service"] == "telegram"
+    assert body["data"]["ok"] is True
+    assert "42" in body["data"]["detail"]
+
+    assert len(captured) == 1
+    sent_payload = captured[0]["kwargs"]["json"]
+    assert sent_payload["chat_id"] == "123456789"
+
+
+def test_post_telegram_error_status(monkeypatch):
+    monkeypatch.setattr(settings, "telegram_bot_token", "invalid-token")
+    monkeypatch.setattr(settings, "telegram_test_chat_id", "123456789")
+
+    fake_response = _FakeResponse(
+        401,
+        text='{"ok": false, "description": "Unauthorized"}',
+        json_data={"ok": False, "description": "Unauthorized"},
+    )
+    monkeypatch.setattr(
+        telegram_service.httpx,
+        "Client",
+        lambda *a, **k: _FakeClient(fake_response),
+    )
+
+    response = client.post("/health/integrations/telegram")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "error"
+    assert "Unauthorized" in body["details"]["detail"]
+
+
+def test_post_telegram_network_error_does_not_leak_token(monkeypatch):
+    monkeypatch.setattr(settings, "telegram_bot_token", "SECRET")
+    monkeypatch.setattr(settings, "telegram_test_chat_id", "123456789")
+    monkeypatch.setattr(
+        telegram_service.httpx, "Client", lambda *a, **k: _TokenLeakingRaisingClient()
+    )
+
+    response = client.post("/health/integrations/telegram")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "error"
+    assert "SECRET" not in response.text
+
+
+def test_post_telegram_not_configured(monkeypatch):
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-bot-token")
+    monkeypatch.setattr(settings, "telegram_test_chat_id", "")
+
+    response = client.post("/health/integrations/telegram")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "error"
+    assert "no configurado" in body["details"]["detail"]
+    assert "TELEGRAM_TEST_CHAT_ID" in body["details"]["detail"]

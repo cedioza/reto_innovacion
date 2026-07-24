@@ -53,6 +53,11 @@ INTEGRATIONS: dict[str, Integration] = {
         required_settings=["resend_api_key", "resend_test_to"],
         required_env=["RESEND_API_KEY", "RESEND_TEST_TO"],
     ),
+    "telegram": Integration(
+        name="telegram",
+        required_settings=["telegram_bot_token", "telegram_test_chat_id"],
+        required_env=["TELEGRAM_BOT_TOKEN", "TELEGRAM_TEST_CHAT_ID"],
+    ),
 }
 
 
@@ -64,11 +69,13 @@ def _register_checks() -> None:
     """
     from app.services.integrations import database, gemini, whatsapp
     from app.services.integrations import resend as resend_service
+    from app.services.integrations import telegram as telegram_service
 
     INTEGRATIONS["gemini"].check = gemini.check
     INTEGRATIONS["whatsapp"].check = whatsapp.check
     INTEGRATIONS["postgres"].check = database.check
     INTEGRATIONS["resend"].check = resend_service.check
+    INTEGRATIONS["telegram"].check = telegram_service.check
 
 
 _register_checks()

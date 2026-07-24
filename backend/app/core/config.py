@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     database_url: str = ""
     resend_api_key: str = ""
     resend_test_to: str = ""
+    telegram_bot_token: str = ""
+    telegram_test_chat_id: str = ""
 
 
 settings = Settings()
