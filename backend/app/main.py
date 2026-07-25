@@ -1,6 +1,6 @@
 """Punto de entrada de la aplicación FastAPI."""
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.conversations import router as conversations_router
@@ -19,7 +19,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(conversations_router)
-app.include_router(health_router)
-app.include_router(integrations_router)
-app.include_router(webhooks_router)
+api_v1 = APIRouter(prefix="/api/v1")
+api_v1.include_router(health_router)
+api_v1.include_router(integrations_router)
+api_v1.include_router(conversations_router)
+api_v1.include_router(webhooks_router)
+app.include_router(api_v1)

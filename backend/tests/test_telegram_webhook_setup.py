@@ -1,4 +1,4 @@
-"""Tests for the Telegram webhook registration endpoint (POST /webhooks/telegram/set)."""
+"""Tests for the Telegram webhook registration endpoint (POST /api/v1/webhooks/telegram/set)."""
 
 import httpx
 from fastapi.testclient import TestClient
@@ -22,7 +22,7 @@ def test_set_webhook_without_bot_token_returns_503(monkeypatch):
     monkeypatch.setattr(settings, "telegram_bot_token", "")
     monkeypatch.setattr(settings, "backend_public_url", "https://backend.example.com")
 
-    response = client.post("/webhooks/telegram/set")
+    response = client.post("/api/v1/webhooks/telegram/set")
 
     assert response.status_code == 503
     assert response.json()["ok"] is False
@@ -37,7 +37,7 @@ def test_set_webhook_without_backend_public_url_returns_503_and_does_not_call_ht
 
     monkeypatch.setattr(telegram_client.httpx, "post", fail_request)
 
-    response = client.post("/webhooks/telegram/set")
+    response = client.post("/api/v1/webhooks/telegram/set")
 
     assert response.status_code == 503
     assert response.json()["ok"] is False
@@ -55,11 +55,11 @@ def test_set_webhook_success_sends_expected_payload(monkeypatch):
 
     monkeypatch.setattr(telegram_client.httpx, "post", fake_post)
 
-    response = client.post("/webhooks/telegram/set")
+    response = client.post("/api/v1/webhooks/telegram/set")
 
     assert response.status_code == 200
     assert response.json() == {"ok": True, "result": True}
-    assert captured["kwargs"]["json"]["url"] == "https://backend.example.com/webhooks/telegram"
+    assert captured["kwargs"]["json"]["url"] == "https://backend.example.com/api/v1/webhooks/telegram"
     assert captured["kwargs"]["json"]["secret_token"] == "s3cret"
 
 
@@ -72,7 +72,7 @@ def test_set_webhook_network_error_returns_503_without_leaking_token(monkeypatch
 
     monkeypatch.setattr(telegram_client.httpx, "post", fake_post)
 
-    response = client.post("/webhooks/telegram/set")
+    response = client.post("/api/v1/webhooks/telegram/set")
 
     assert response.status_code == 503
     assert "test-token" not in response.text

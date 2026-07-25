@@ -47,7 +47,7 @@ npm run dev
 
 Ambos proyectos se despliegan en **Dokploy**:
 
-- **Backend** — Application con build type **Nixpacks** (lee [backend/Procfile](backend/Procfile)); puerto del contenedor `8000`; health check path `/health`; env vars según [backend/.env.example](backend/.env.example) (`BACKEND_PUBLIC_URL` = dominio HTTPS asignado; `DATABASE_URL` = servicio Postgres creado en Dokploy). Tras el deploy, re-apuntar los webhooks de YCloud/Meta al dominio nuevo y re-registrar el de Telegram (`POST /webhooks/telegram/set`).
+- **Backend** — Application con build type **Nixpacks** (lee [backend/Procfile](backend/Procfile)); puerto del contenedor `8000`; health check path `/api/v1/health`; env vars según [backend/.env.example](backend/.env.example) (`BACKEND_PUBLIC_URL` = dominio HTTPS asignado; `DATABASE_URL` = servicio Postgres creado en Dokploy). Tras el deploy, re-apuntar los webhooks de YCloud/Meta al dominio nuevo y re-registrar el de Telegram (`POST /api/v1/webhooks/telegram/set`).
 - **Frontend** — build type **Static**: build command `npm run build`, publish directory `dist`. ⚠️ `VITE_API_URL` se inyecta **en build time**: definirla en Environment antes de compilar (y rebuildar si cambia). Actualizar `FRONTEND_URL` del backend con el dominio del front (CORS).
 - **Pendiente de verificar** (asunción: el modo Static sirve la SPA): abrir directo `https://<front>/panel` tras el primer deploy. El router usa history mode, así que el servidor debe hacer fallback a `index.html` en rutas sin archivo; si responde 404, cambiar el front a Dockerfile con nginx (`try_files $uri $uri/ /index.html;`).
 

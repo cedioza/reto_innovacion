@@ -105,7 +105,7 @@ def test_ycloud_webhook_accepts_valid_signature_and_sends_response(monkeypatch):
     )
 
     response = client.post(
-        "/webhooks/ycloud/whatsapp",
+        "/api/v1/webhooks/ycloud/whatsapp",
         content=raw_body,
         headers={"YCloud-Signature": signature},
     )
@@ -124,7 +124,7 @@ def test_ycloud_webhook_returns_5xx_when_processing_fails(monkeypatch):
 
     payload = _ycloud_payload()
     payload["id"] = "evt_delivery_failure"
-    response = client.post("/webhooks/ycloud/whatsapp", json=payload)
+    response = client.post("/api/v1/webhooks/ycloud/whatsapp", json=payload)
 
     assert response.status_code == 502
     assert response.json() == {"detail": "Webhook processing failed"}
@@ -143,8 +143,8 @@ def test_ycloud_webhook_deduplicates_event_in_process(monkeypatch):
 
     payload = _ycloud_payload()
     payload["id"] = "evt_dedupe"
-    first = client.post("/webhooks/ycloud/whatsapp", json=payload)
-    second = client.post("/webhooks/ycloud/whatsapp", json=payload)
+    first = client.post("/api/v1/webhooks/ycloud/whatsapp", json=payload)
+    second = client.post("/api/v1/webhooks/ycloud/whatsapp", json=payload)
 
     assert first.status_code == second.status_code == 200
     assert handled == [("whatsapp", "573001234567", "Hola")]
@@ -155,7 +155,7 @@ def test_ycloud_webhook_rejects_invalid_signature(monkeypatch):
     monkeypatch.setattr(webhooks.time, "time", lambda: 1720000000)
 
     response = client.post(
-        "/webhooks/ycloud/whatsapp",
+        "/api/v1/webhooks/ycloud/whatsapp",
         json=_ycloud_payload(),
         headers={"YCloud-Signature": "t=1720000000,s=invalid"},
     )
@@ -167,7 +167,7 @@ def test_ycloud_webhook_rejects_unsigned_by_default(monkeypatch):
     monkeypatch.setattr(settings, "ycloud_webhook_secret", "")
     monkeypatch.setattr(settings, "ycloud_allow_unsigned_webhooks", False)
 
-    response = client.post("/webhooks/ycloud/whatsapp", json=_ycloud_payload())
+    response = client.post("/api/v1/webhooks/ycloud/whatsapp", json=_ycloud_payload())
 
     assert response.status_code == 401
 
@@ -178,7 +178,7 @@ def test_ycloud_webhook_allows_unsigned_only_when_enabled(monkeypatch):
     monkeypatch.setattr(webhooks._handler, "handle_incoming", lambda *args: "Respuesta")
     monkeypatch.setattr(webhooks, "send_whatsapp_message", lambda *args: True)
 
-    response = client.post("/webhooks/ycloud/whatsapp", json=_ycloud_payload())
+    response = client.post("/api/v1/webhooks/ycloud/whatsapp", json=_ycloud_payload())
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
@@ -191,7 +191,7 @@ def test_ycloud_webhook_rejects_old_signature(monkeypatch):
     raw_body, signature = _signed_body(_ycloud_payload(), secret, "1720000000")
 
     response = client.post(
-        "/webhooks/ycloud/whatsapp",
+        "/api/v1/webhooks/ycloud/whatsapp",
         content=raw_body,
         headers={"YCloud-Signature": signature},
     )
@@ -204,7 +204,7 @@ def test_ycloud_webhook_ignores_other_events(monkeypatch):
     monkeypatch.setattr(settings, "ycloud_allow_unsigned_webhooks", True)
     payload = {"type": "whatsapp.message.delivered"}
 
-    response = client.post("/webhooks/ycloud/whatsapp", json=payload)
+    response = client.post("/api/v1/webhooks/ycloud/whatsapp", json=payload)
 
     assert response.status_code == 200
     assert response.json() == {"status": "ignored"}
@@ -214,7 +214,7 @@ def test_meta_webhook_verification_remains_available(monkeypatch):
     monkeypatch.setattr(settings, "whatsapp_verify_token", "verify-token")
 
     response = client.get(
-        "/webhooks/whatsapp",
+        "/api/v1/webhooks/whatsapp",
         params={
             "hub.mode": "subscribe",
             "hub.verify_token": "verify-token",

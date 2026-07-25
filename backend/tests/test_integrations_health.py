@@ -1,4 +1,4 @@
-"""Tests de GET /health/integrations y de que /health sigue intacto."""
+"""Tests de GET /api/v1/health/integrations y de que /api/v1/health sigue intacto."""
 
 import httpx
 from fastapi.testclient import TestClient
@@ -35,7 +35,7 @@ def _clear_integration_settings(monkeypatch) -> None:
 
 
 def test_health_still_ok():
-    response = client.get("/health")
+    response = client.get("/api/v1/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
@@ -43,7 +43,7 @@ def test_health_still_ok():
 def test_list_integrations_returns_all_services(monkeypatch):
     _clear_integration_settings(monkeypatch)
 
-    response = client.get("/health/integrations")
+    response = client.get("/api/v1/health/integrations")
 
     assert response.status_code == 200
     body = response.json()
@@ -60,7 +60,7 @@ def test_list_integrations_returns_all_services(monkeypatch):
 def test_all_unconfigured_when_settings_empty(monkeypatch):
     _clear_integration_settings(monkeypatch)
 
-    response = client.get("/health/integrations")
+    response = client.get("/api/v1/health/integrations")
 
     body = response.json()
     services = {item["service"]: item for item in body["data"]}
@@ -72,7 +72,7 @@ def test_gemini_configured_when_key_present(monkeypatch):
     _clear_integration_settings(monkeypatch)
     monkeypatch.setattr(settings, "gemini_api_key", "test-key")
 
-    response = client.get("/health/integrations")
+    response = client.get("/api/v1/health/integrations")
 
     services = {item["service"]: item for item in response.json()["data"]}
     assert services["gemini"]["configured"] is True
@@ -86,14 +86,14 @@ def test_whatsapp_requires_all_three_vars(monkeypatch):
     monkeypatch.setattr(settings, "whatsapp_phone_id", "test-phone-id")
     # whatsapp_test_to sigue vacío: solo 2 de 3 vars configuradas.
 
-    response = client.get("/health/integrations")
+    response = client.get("/api/v1/health/integrations")
 
     services = {item["service"]: item for item in response.json()["data"]}
     assert services["whatsapp"]["configured"] is False
 
     monkeypatch.setattr(settings, "whatsapp_test_to", "573001234567")
 
-    response = client.get("/health/integrations")
+    response = client.get("/api/v1/health/integrations")
 
     services = {item["service"]: item for item in response.json()["data"]}
     assert services["whatsapp"]["configured"] is True
@@ -105,7 +105,7 @@ def test_postgres_and_resend_configured_with_fake_values(monkeypatch):
     monkeypatch.setattr(settings, "resend_api_key", "test-resend-key")
     monkeypatch.setattr(settings, "resend_test_to", "test@example.com")
 
-    response = client.get("/health/integrations")
+    response = client.get("/api/v1/health/integrations")
 
     services = {item["service"]: item for item in response.json()["data"]}
     assert services["postgres"]["configured"] is True
@@ -171,7 +171,7 @@ def test_post_gemini_success(monkeypatch):
         lambda *a, **k: _FakeClient(_FakeResponse(200, "{}")),
     )
 
-    response = client.post("/health/integrations/gemini")
+    response = client.post("/api/v1/health/integrations/gemini")
 
     assert response.status_code == 200
     body = response.json()
@@ -190,7 +190,7 @@ def test_post_gemini_error_status(monkeypatch):
         lambda *a, **k: _FakeClient(_FakeResponse(401, "unauthorized")),
     )
 
-    response = client.post("/health/integrations/gemini")
+    response = client.post("/api/v1/health/integrations/gemini")
 
     assert response.status_code == 503
     body = response.json()
@@ -201,7 +201,7 @@ def test_post_gemini_network_error(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "test-key")
     monkeypatch.setattr(gemini_service.httpx, "Client", lambda *a, **k: _RaisingClient())
 
-    response = client.post("/health/integrations/gemini")
+    response = client.post("/api/v1/health/integrations/gemini")
 
     assert response.status_code == 503
     body = response.json()
@@ -211,7 +211,7 @@ def test_post_gemini_network_error(monkeypatch):
 def test_post_gemini_not_configured(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "")
 
-    response = client.post("/health/integrations/gemini")
+    response = client.post("/api/v1/health/integrations/gemini")
 
     assert response.status_code == 503
     body = response.json()
@@ -220,7 +220,7 @@ def test_post_gemini_not_configured(monkeypatch):
 
 
 def test_post_unknown_service_returns_404():
-    response = client.post("/health/integrations/noexiste")
+    response = client.post("/api/v1/health/integrations/noexiste")
 
     assert response.status_code == 404
     body = response.json()
@@ -233,7 +233,7 @@ def test_post_check_not_implemented_yet():
     `check` implementado)."""
     INTEGRATIONS["fake"] = Integration(name="fake", required_settings=[], required_env=[])
     try:
-        response = client.post("/health/integrations/fake")
+        response = client.post("/api/v1/health/integrations/fake")
     finally:
         del INTEGRATIONS["fake"]
 
@@ -287,7 +287,7 @@ def test_post_postgres_success(monkeypatch):
         lambda *a, **k: _FakeConnection(),
     )
 
-    response = client.post("/health/integrations/postgres")
+    response = client.post("/api/v1/health/integrations/postgres")
 
     assert response.status_code == 200
     body = response.json()
@@ -306,7 +306,7 @@ def test_post_postgres_operational_error(monkeypatch):
 
     monkeypatch.setattr(database_service.psycopg, "connect", _raise)
 
-    response = client.post("/health/integrations/postgres")
+    response = client.post("/api/v1/health/integrations/postgres")
 
     assert response.status_code == 503
     body = response.json()
@@ -316,7 +316,7 @@ def test_post_postgres_operational_error(monkeypatch):
 def test_post_postgres_not_configured(monkeypatch):
     monkeypatch.setattr(settings, "database_url", "")
 
-    response = client.post("/health/integrations/postgres")
+    response = client.post("/api/v1/health/integrations/postgres")
 
     assert response.status_code == 503
     body = response.json()
@@ -341,7 +341,7 @@ def test_post_whatsapp_success(monkeypatch):
         lambda *a, **k: _FakeClient(fake_response, captured),
     )
 
-    response = client.post("/health/integrations/whatsapp")
+    response = client.post("/api/v1/health/integrations/whatsapp")
 
     assert response.status_code == 200
     body = response.json()
@@ -373,7 +373,7 @@ def test_post_whatsapp_meta_error(monkeypatch):
         lambda *a, **k: _FakeClient(fake_response),
     )
 
-    response = client.post("/health/integrations/whatsapp")
+    response = client.post("/api/v1/health/integrations/whatsapp")
 
     assert response.status_code == 503
     body = response.json()
@@ -388,7 +388,7 @@ def test_post_whatsapp_network_error(monkeypatch):
     monkeypatch.setattr(settings, "whatsapp_test_to", "573001234567")
     monkeypatch.setattr(whatsapp_service.httpx, "Client", lambda *a, **k: _RaisingClient())
 
-    response = client.post("/health/integrations/whatsapp")
+    response = client.post("/api/v1/health/integrations/whatsapp")
 
     assert response.status_code == 503
     body = response.json()
@@ -401,7 +401,7 @@ def test_post_whatsapp_not_configured(monkeypatch):
     monkeypatch.setattr(settings, "whatsapp_phone_id", "123456")
     monkeypatch.setattr(settings, "whatsapp_test_to", "")
 
-    response = client.post("/health/integrations/whatsapp")
+    response = client.post("/api/v1/health/integrations/whatsapp")
 
     assert response.status_code == 503
     body = response.json()
@@ -416,7 +416,7 @@ def test_post_whatsapp_ycloud_check_only_validates_configuration(monkeypatch):
     monkeypatch.setattr(settings, "ycloud_whatsapp_from", "57300999")
     monkeypatch.setattr(whatsapp_service.httpx, "Client", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no request")))
 
-    response = client.post("/health/integrations/whatsapp")
+    response = client.post("/api/v1/health/integrations/whatsapp")
 
     assert response.status_code == 200
     assert response.json()["data"]["ok"] is True
@@ -434,7 +434,7 @@ def test_post_resend_success(monkeypatch):
         lambda *a, **k: _FakeClient(fake_response, captured),
     )
 
-    response = client.post("/health/integrations/resend")
+    response = client.post("/api/v1/health/integrations/resend")
 
     assert response.status_code == 200
     body = response.json()
@@ -464,7 +464,7 @@ def test_post_resend_error_status(monkeypatch):
         lambda *a, **k: _FakeClient(fake_response),
     )
 
-    response = client.post("/health/integrations/resend")
+    response = client.post("/api/v1/health/integrations/resend")
 
     assert response.status_code == 503
     body = response.json()
@@ -476,7 +476,7 @@ def test_post_resend_not_configured(monkeypatch):
     monkeypatch.setattr(settings, "resend_api_key", "test-resend-key")
     monkeypatch.setattr(settings, "resend_test_to", "")
 
-    response = client.post("/health/integrations/resend")
+    response = client.post("/api/v1/health/integrations/resend")
 
     assert response.status_code == 503
     body = response.json()
@@ -514,7 +514,7 @@ def test_post_telegram_success(monkeypatch):
         lambda *a, **k: _FakeClient(fake_response, captured),
     )
 
-    response = client.post("/health/integrations/telegram")
+    response = client.post("/api/v1/health/integrations/telegram")
 
     assert response.status_code == 200
     body = response.json()
@@ -543,7 +543,7 @@ def test_post_telegram_error_status(monkeypatch):
         lambda *a, **k: _FakeClient(fake_response),
     )
 
-    response = client.post("/health/integrations/telegram")
+    response = client.post("/api/v1/health/integrations/telegram")
 
     assert response.status_code == 503
     body = response.json()
@@ -558,7 +558,7 @@ def test_post_telegram_network_error_does_not_leak_token(monkeypatch):
         telegram_service.httpx, "Client", lambda *a, **k: _TokenLeakingRaisingClient()
     )
 
-    response = client.post("/health/integrations/telegram")
+    response = client.post("/api/v1/health/integrations/telegram")
 
     assert response.status_code == 503
     body = response.json()
@@ -570,7 +570,7 @@ def test_post_telegram_not_configured(monkeypatch):
     monkeypatch.setattr(settings, "telegram_bot_token", "test-bot-token")
     monkeypatch.setattr(settings, "telegram_test_chat_id", "")
 
-    response = client.post("/health/integrations/telegram")
+    response = client.post("/api/v1/health/integrations/telegram")
 
     assert response.status_code == 503
     body = response.json()

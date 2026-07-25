@@ -1,4 +1,4 @@
-"""Tests for GET /webhooks/whatsapp (Meta webhook verification handshake)."""
+"""Tests for GET /api/v1/webhooks/whatsapp (Meta webhook verification handshake)."""
 
 from fastapi.testclient import TestClient
 
@@ -12,7 +12,7 @@ def test_verify_whatsapp_webhook_succeeds_with_correct_token(monkeypatch):
     monkeypatch.setattr(settings, "whatsapp_verify_token", "token-prueba")
 
     response = client.get(
-        "/webhooks/whatsapp",
+        "/api/v1/webhooks/whatsapp",
         params={
             "hub.mode": "subscribe",
             "hub.verify_token": "token-prueba",
@@ -28,7 +28,7 @@ def test_verify_whatsapp_webhook_rejects_wrong_token(monkeypatch):
     monkeypatch.setattr(settings, "whatsapp_verify_token", "token-prueba")
 
     response = client.get(
-        "/webhooks/whatsapp",
+        "/api/v1/webhooks/whatsapp",
         params={
             "hub.mode": "subscribe",
             "hub.verify_token": "otro-token",
@@ -43,7 +43,7 @@ def test_verify_whatsapp_webhook_fails_closed_when_token_not_configured(monkeypa
     monkeypatch.setattr(settings, "whatsapp_verify_token", "")
 
     response = client.get(
-        "/webhooks/whatsapp",
+        "/api/v1/webhooks/whatsapp",
         params={
             "hub.mode": "subscribe",
             "hub.verify_token": "",

@@ -30,7 +30,7 @@ def test_telegram_webhook_accepts_valid_secret_header(monkeypatch):
     monkeypatch.setattr(webhooks, "send_telegram_message", lambda chat_id, text: True)
 
     response = client.post(
-        "/webhooks/telegram",
+        "/api/v1/webhooks/telegram",
         json=_telegram_payload(),
         headers={"X-Telegram-Bot-Api-Secret-Token": "s3cret"},
     )
@@ -50,7 +50,7 @@ def test_telegram_webhook_rejects_missing_secret_header(monkeypatch):
     )
     monkeypatch.setattr(webhooks, "send_telegram_message", lambda chat_id, text: True)
 
-    response = client.post("/webhooks/telegram", json=_telegram_payload())
+    response = client.post("/api/v1/webhooks/telegram", json=_telegram_payload())
 
     assert response.status_code == 401
     assert handled == []
@@ -67,7 +67,7 @@ def test_telegram_webhook_rejects_incorrect_secret_header(monkeypatch):
     monkeypatch.setattr(webhooks, "send_telegram_message", lambda chat_id, text: True)
 
     response = client.post(
-        "/webhooks/telegram",
+        "/api/v1/webhooks/telegram",
         json=_telegram_payload(),
         headers={"X-Telegram-Bot-Api-Secret-Token": "wrong"},
     )
@@ -86,7 +86,7 @@ def test_telegram_webhook_allows_unconfigured_secret_without_header(monkeypatch)
     )
     monkeypatch.setattr(webhooks, "send_telegram_message", lambda chat_id, text: True)
 
-    response = client.post("/webhooks/telegram", json=_telegram_payload())
+    response = client.post("/api/v1/webhooks/telegram", json=_telegram_payload())
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}

@@ -17,7 +17,7 @@ from app.schemas.conversation import (
 from app.services import orchestrator
 from app.services.conversation import conversation_service
 
-router = APIRouter(prefix="/api/v1/conversations", tags=["conversations"])
+router = APIRouter(prefix="/conversations", tags=["conversations"])
 _service = conversation_service
 
 

@@ -28,7 +28,7 @@ def set_telegram_webhook() -> dict:
     if not settings.backend_public_url:
         return {"ok": False, "error": "backend_public_url not configured"}
 
-    webhook_url = f"{settings.backend_public_url.rstrip('/')}/webhooks/telegram"
+    webhook_url = f"{settings.backend_public_url.rstrip('/')}/api/v1/webhooks/telegram"
     api_url = f"{TELEGRAM_API}{settings.telegram_bot_token}/setWebhook"
     payload = {"url": webhook_url}
     if settings.telegram_webhook_secret:

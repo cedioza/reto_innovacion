@@ -3,6 +3,7 @@
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+// Convención: todos los paths llevan el prefijo /api/v1 explícito (contrato del backend)
 async function request(path, options = {}) {
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
@@ -21,5 +22,5 @@ export const api = {
 }
 
 export function getHealth() {
-  return api.get('/health')
+  return api.get('/api/v1/health')
 }

@@ -24,6 +24,7 @@ api → services → repositories → models
 
 ## Convenciones
 
+- Todo endpoint HTTP cuelga de `/api/v1` (el router raíz de `main.py`); los routers declaran su prefijo SIN `/api/v1`.
 - Nuevo endpoint = nuevo router en `api/routes/` registrado en `main.py`, con su schema en `schemas/` y su service en `services/`.
 - Cada endpoint nuevo lleva al menos un test en `tests/` (patrón: `tests/test_health.py` con `TestClient`).
 - Nueva variable de entorno = campo en `Settings` + entrada en `.env.example`.
