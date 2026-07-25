@@ -6,6 +6,8 @@ estos tests deben fallar con ModuleNotFoundError/ImportError hasta que se
 implemente en la siguiente tarea. Eso es intencional (TDD-light).
 """
 
+import base64
+
 import httpx
 
 from app.core.config import settings
@@ -382,3 +384,56 @@ def test_generate_reply_with_tools_declared_but_text_response_returns_text(monke
 
     assert reply.kind == "text"
     assert reply.text == "¡Hola!"
+
+
+# --- audio multimodal (Fase 3 del plan) ---
+
+
+def test_audio_part_builds_inline_data_dict_with_default_mime_type():
+    raw_bytes = b"fake-ogg-bytes"
+
+    part = gemini_client.audio_part(raw_bytes)
+
+    assert part == {
+        "inline_data": {
+            "mime_type": "audio/ogg",
+            "data": base64.b64encode(raw_bytes).decode(),
+        }
+    }
+
+
+def test_audio_part_respects_custom_mime_type():
+    part = gemini_client.audio_part(b"x", mime_type="audio/mpeg")
+
+    assert part["inline_data"]["mime_type"] == "audio/mpeg"
+
+
+def test_generate_reply_with_audio_part_sends_inline_data_and_returns_text(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    captured: list = []
+    json_data = {"candidates": [{"content": {"parts": [{"text": "dice hola"}]}}]}
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=json_data)], calls, captured)
+
+    reply = gemini_client.generate_reply(
+        [
+            gemini_client.user_message(
+                gemini_client.audio_part(b"abc"),
+                gemini_client.text_part("¿qué dice el audio?"),
+            )
+        ]
+    )
+
+    assert len(captured) == 1
+    sent_payload = captured[0]["kwargs"]["json"]
+    sent_parts = sent_payload["contents"][0]["parts"]
+    assert {
+        "inline_data": {
+            "mime_type": "audio/ogg",
+            "data": base64.b64encode(b"abc").decode(),
+        }
+    } in sent_parts
+    assert {"text": "¿qué dice el audio?"} in sent_parts
+
+    assert reply.kind == "text"
+    assert reply.text == "dice hola"

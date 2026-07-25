@@ -7,6 +7,7 @@ las capas de `services`/`repositories` de la aplicación: eso vive en el
 service que use este cliente (fases siguientes del plan).
 """
 
+import base64
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -32,6 +33,16 @@ class GeminiReply:
 def text_part(text: str) -> dict:
     """Construye una `part` de tipo texto para el formato de Gemini."""
     return {"text": text}
+
+
+def audio_part(data: bytes, mime_type: str = "audio/ogg") -> dict:
+    """Construye una `part` de audio inline (base64) para el formato de Gemini."""
+    return {
+        "inline_data": {
+            "mime_type": mime_type,
+            "data": base64.b64encode(data).decode(),
+        }
+    }
 
 
 def user_message(*parts: dict) -> dict:
