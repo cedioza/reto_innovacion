@@ -87,6 +87,61 @@ herramientas, no rutas) y se verifican en el diff de cada checkpoint.
   ```
   (config local: cada clon nuevo debe volver a correrlo).
 
+## Flujo paralelo (worktrees) — `/launch-plan` + `/merge-plans`
+
+Segundo modo de ejecución, para correr **hasta 3 planes ya generados en simultáneo**
+sin tocar el flujo supervisado (detalle completo en
+[parallel/README.md](parallel/README.md)). Reutiliza los MISMOS agentes como caja
+negra; lo que cambia es quién aprueba y dónde se trabaja:
+
+| | Supervisado (`/run-plan`) | Paralelo (`/launch-plan`) |
+|---|---|---|
+| Gates por fase | tú apruebas cada fase | sin gates — corre de punta a punta |
+| Commits | los haces tú | los hace el orquestador (Conventional Commits) |
+| Dónde | el repo principal | worktree aislado `../worktrees/plan-<id>` |
+| Integración | PR manual a master | `/merge-plans` (orden de lanzamiento) → master |
+| Paralelismo | 1 plan a la vez | hasta 3 (una sesión/terminal por plan) |
+
+```
+FLUJO SUPERVISADO (existente)              FLUJO PARALELO (nuevo)
+─────────────────────────────              ───────────────────────────────────────────
+/gen-plan ──► plan.md                      /gen-plan ──► plan-A.md  plan-B.md  plan-C.md
+    │                                            │            │          │
+    ▼                                       (3 sesiones)      │          │
+/run-plan (repo principal)                 /launch-plan A  /launch-plan B  /launch-plan C
+    │                                            │            │          │
+  ┌─fase──────────────────┐                 worktree A     worktree B   worktree C
+  │ ✅ gate (tú apruebas) │                 rama plan/A    rama plan/B  rama plan/C
+  │ implementer/test-     │                      │            │          │
+  │ runner/debugger       │                  mismas fases, mismos agentes, sin gates
+  │ 🛑 checkpoint         │                  commit por fase + push origin plan/<id>
+  │   (tú commiteas)      │                      │            │          │
+  └───────────────────────┘                      └────────────┼──────────┘
+    │  ...fase N                                              ▼
+    ▼                                        /merge-plans A B C   (ordena por
+  PR manual ──► master                           │                 launched_at del JSONL)
+                                             merge secuencial en worktree de
+                                             integración; conflictos → subagente
+                                             + suite verde │ rojo → STOP
+                                                 │
+                                             push ──► master
+```
+
+Estado compartido: `.claude/state/plans-launched.jsonl` (una línea por lanzamiento,
+escrita solo vía [parallel/plan-state.ps1](parallel/plan-state.ps1) con lock — su
+`launched_at` define el orden de integración). Ciclo:
+`running → pushed → merged`, con desvíos `failed` y `needs_human_review`.
+
+**Cuándo usar cuál**: `/run-plan` cuando quieres revisar cada fase (cambios de
+contrato, decisiones finas); `/launch-plan` para planes autocontenidos, sin
+decisiones pendientes y de ámbitos disjuntos entre sí (menos conflictos al mergear).
+
+**Los worktrees verifican SIN secretos**: la suite del backend y el build del front
+corren sin `.env` (los tests live quedan skipped por diseño — verificado 241+9). Los
+`.env` reales nunca se copian a los worktrees por defecto; si un plan exige
+verificación en vivo, se enlaza el del repo principal por hardlink y se retira al
+terminar.
+
 ## Notas operativas
 
 - Los agentes se cargan al **inicio de sesión**: si acabas de crearlos o editarlos,

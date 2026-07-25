@@ -70,8 +70,33 @@ c:\...\fork\
 ```
 
 Cada worktree se bootstrapea solo: junction de `frontend/node_modules` al del repo
-principal, pytest con el venv del principal por ruta absoluta, y copia de los
-`.env` reales (todo eso está gitignorado y un worktree nuevo no lo trae).
+principal y pytest con el venv del principal por ruta absoluta (todo eso está
+gitignorado y un worktree nuevo no lo trae).
+
+## Secretos y `.env` en los worktrees
+
+**Por defecto, los worktrees NO reciben ningún `.env`.** La suite completa del
+backend (241 passed + 9 skipped, verificado sin `.env`) y el `npm run build` corren
+sin secretos: los tests live están gateados por `RUN_LIVE_GEMINI_TESTS` (quedan
+skipped) y `Settings` tiene defaults vacíos — los health checks degradan a "no
+configurado" en vez de fallar. Menos copias de secretos en disco, cero secretos en
+ramas/worktrees que se pushean.
+
+Si un plan exige verificación en vivo (uvicorn contra Gemini/Postgres reales),
+opciones en orden de preferencia:
+
+1. **Hardlink temporal** (misma unidad, sin admin, sin segunda copia física; se
+   retira al terminar): `cmd /c mklink /H "<wt>\backend\.env" "<main>\backend\.env"`
+   y `del "<wt>\backend\.env"` después. Editar el original NO invalida el link.
+2. **Variables de proceso** (nada toca el disco): setear solo las necesarias en la
+   sesión que levanta uvicorn (`$env:GEMINI_API_KEY = ...`) — pydantic-settings lee
+   el entorno real por encima del archivo.
+3. **Copia explícita** (último recurso): `Copy-Item` del `.env` y borrado manual —
+   es la opción con más residuo; evitarla.
+
+Nunca: commitear un `.env` (gitignored en todos los worktrees, el `.gitignore` viaja
+con el checkout), pasar secretos por argumentos de comandos (quedan en historial de
+shell) o pegarlos en prompts de agentes.
 
 ## Consejos y límites
 

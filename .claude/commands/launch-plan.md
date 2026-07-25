@@ -56,8 +56,13 @@ del plan sin fecha ni `.plan.md`.
    - Backend: NO copiar el venv — todos los pytest se corren con el intérprete del
      repo principal por ruta absoluta, con cwd en el worktree:
      `& "<main>\backend\.venv\Scripts\python.exe" -m pytest -q` (desde `<wt>\backend`).
-   - Copiar los `.env` reales (gitignorados): `<main>\backend\.env → <wt>\backend\.env`
-     y `<main>\frontend\.env → <wt>\frontend\.env` (si existen).
+   - **`.env`: NO copiar por defecto.** La suite completa y el build corren SIN
+     secretos (verificado: 241+9 sin `.env` — los tests live están gateados por env
+     var y `Settings` tiene defaults vacíos). Menos copias de secretos en disco =
+     menos superficie. Solo si el plan exige una verificación en vivo con servicios
+     reales, crea un **hardlink** (misma unidad, sin admin, sin segunda copia
+     física): `cmd /c mklink /H "<wt>\backend\.env" "<main>\backend\.env"` — y
+     bórralo al terminar esa verificación.
    - Si el archivo del plan está **untracked** en `<main>` (aún sin commitear),
      cópialo a la misma ruta dentro de `<wt>` y haz ahí el primer commit:
      `docs(plan): add <slug> plan`.

@@ -36,7 +36,8 @@ Sea `<main>` el repo principal.
 4. Bootstrap del entorno (idéntico a `/launch-plan`): junction
    `cmd /c mklink /J "<wt>\frontend\node_modules" "<main>\frontend\node_modules"`,
    pytest siempre con `& "<main>\backend\.venv\Scripts\python.exe" -m pytest -q`
-   (cwd `<wt>\backend`), copiar `.env` reales a `<wt>`.
+   (cwd `<wt>\backend`). **Sin `.env`**: la suite y el build corren sin secretos
+   (los tests live quedan skipped, que es lo correcto en integración).
 
 ## Paso 3 — Merges secuenciales (en el orden del Paso 1)
 
