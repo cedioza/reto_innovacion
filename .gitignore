@@ -21,3 +21,6 @@ dist/
 # Sistema operativo
 .DS_Store
 Thumbs.db
+
+# Estado runtime del flujo paralelo de planes (.claude/parallel/README.md)
+.claude/state/*.jsonl
