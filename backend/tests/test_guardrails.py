@@ -24,6 +24,7 @@ sin red.
 
 from __future__ import annotations
 
+import base64
 import re
 
 from app.schemas.conversation import ConversationCreate, ProfileData
@@ -434,3 +435,146 @@ class TestScriptedOutOfScopeClaim:
 
         assert result is not None
         assert result.messages[-1].content == texto
+
+
+# ==============================================================================
+# Fase 3: turnos de audio con confirmación forzada ----------------------------
+# ==============================================================================
+#
+# Cubre `.claude/analysis/plans/20260725-a5-guardrails-y-confirmaciones.plan.md`
+# (Fase 3, criterio 2 de A5): `respond()` todavía NO acepta `audio_data` ni
+# `audio_mime` — la interfaz esperada es
+#
+#     respond(session_id, content, *, audio_data: bytes | None = None,
+#             audio_mime: str = "audio/ogg")
+#
+# Es intencional que los 3 tests que pasan `audio_data=...` fallen HOY con
+# `TypeError` (kwarg inexistente en la firma actual de `respond`) — es la
+# razón correcta de fallo para esta fase. El test de regresión (turno sin
+# audio) NO debe fallar: ya pasa con la firma actual, y debe seguir pasando
+# una vez implementada la Fase 3 (cero regresión sobre el flujo de texto).
+
+
+def _find_inline_data_part(contents: list[dict]) -> dict | None:
+    """Busca la primera `part` `inline_data` en el último mensaje de `contents`."""
+    if not contents:
+        return None
+    last_message = contents[-1]
+    for part in last_message.get("parts", []):
+        if isinstance(part, dict) and "inline_data" in part:
+            return part["inline_data"]
+    return None
+
+
+class TestAudioTurnScriptedBehaviour:
+    def test_audio_turn_disables_tools_and_injects_voice_rule(self, monkeypatch) -> None:
+        sid = _new_session()
+        llm = _scripted_llm(
+            [
+                GeminiReply(
+                    kind="text",
+                    text=(
+                        "Entendí que quieres asegurar tu casa en Bogotá, "
+                        "¿es correcto?"
+                    ),
+                )
+            ]
+        )
+        monkeypatch.setattr(orchestrator, "generate_reply", llm)
+
+        result = orchestrator.respond(sid, "", audio_data=b"fake-ogg")
+
+        assert result is not None
+        assert len(llm.calls) >= 1
+        call = llm.calls[0]
+
+        # El turno de audio no debe ofrecer herramientas al modelo: es la
+        # garantía "por construcción" de que no puede actuar en este turno.
+        assert not call["tools"]
+
+        system_instruction = (call["system_instruction"] or "").lower()
+        assert "nota de voz" in system_instruction
+        assert "confirma" in system_instruction  # cubre "confirmación"/"confirma"
+        assert "no llames herramientas" in system_instruction
+
+        inline_data = _find_inline_data_part(call["contents"])
+        assert inline_data is not None
+        assert inline_data["mime_type"] == "audio/ogg"
+        assert inline_data["data"] == base64.b64encode(b"fake-ogg").decode()
+
+    def test_audio_turn_never_executes_tool_calls(self, monkeypatch) -> None:
+        sid = _new_session()
+        llm = _scripted_llm(
+            [
+                GeminiReply(
+                    kind="tool_call",
+                    tool_name="perfilar_cliente",
+                    tool_args={"stratum": 3},
+                ),
+                GeminiReply(
+                    kind="text", text="Entendí tu mensaje, ¿confirmas?"
+                ),
+            ]
+        )
+        monkeypatch.setattr(orchestrator, "generate_reply", llm)
+
+        result = orchestrator.respond(sid, "", audio_data=b"x")
+
+        assert result is not None
+        # Aunque el guion (malicioso/con error) devuelva un tool_call, el
+        # orquestador NUNCA lo ejecuta en un turno de audio: defensa en
+        # profundidad además de la ausencia de `tools` en el payload.
+        assert result.profile is None
+        assert result.messages[-1].role == "assistant"
+        assert result.messages[-1].content != ""
+
+    def test_audio_turn_without_caption_stores_placeholder(self, monkeypatch) -> None:
+        llm = _scripted_llm(
+            [
+                GeminiReply(kind="text", text="¿Es correcto lo que entendí?"),
+                GeminiReply(kind="text", text="Entendí, ¿confirmas?"),
+            ]
+        )
+        monkeypatch.setattr(orchestrator, "generate_reply", llm)
+
+        sid_sin_caption = _new_session()
+        result_sin_caption = orchestrator.respond(
+            sid_sin_caption, "", audio_data=b"x"
+        )
+        assert result_sin_caption is not None
+        user_messages = [
+            m for m in result_sin_caption.messages if m.role == "user"
+        ]
+        assert user_messages[-1].content == "[nota de voz]"
+
+        sid_con_caption = _new_session()
+        result_con_caption = orchestrator.respond(
+            sid_con_caption, "esto dije", audio_data=b"x"
+        )
+        assert result_con_caption is not None
+        user_messages = [
+            m for m in result_con_caption.messages if m.role == "user"
+        ]
+        assert user_messages[-1].content == "esto dije"
+
+    def test_text_turn_regression_keeps_tools_and_omits_voice_rule(
+        self, monkeypatch
+    ) -> None:
+        """Turno normal sin audio: comportamiento idéntico al actual.
+
+        A diferencia de los tres tests anteriores de esta sección, este NO
+        pasa `audio_data` — usa la firma ya existente de `respond()`, así que
+        debe PASAR hoy mismo (no hay TypeError posible aquí).
+        """
+        sid = _new_session()
+        llm = _scripted_llm(
+            [GeminiReply(kind="text", text="¡Hola! Cuéntame de tu casa")]
+        )
+        monkeypatch.setattr(orchestrator, "generate_reply", llm)
+
+        result = orchestrator.respond(sid, "hola")
+
+        assert result is not None
+        call = llm.calls[0]
+        assert call["tools"]
+        assert "nota de voz" not in (call["system_instruction"] or "").lower()

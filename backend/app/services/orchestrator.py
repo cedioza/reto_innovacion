@@ -27,6 +27,7 @@ from app.services.catalog import CatalogService
 from app.services.conversation import conversation_service
 from app.services.integrations.gemini_client import (
     FALLBACK_MESSAGE,
+    audio_part,
     function_call_part,
     function_response_part,
     generate_reply,
@@ -36,6 +37,18 @@ from app.services.integrations.gemini_client import (
 )
 
 MAX_TOOL_ROUNDS = 5
+
+# -- Turnos de audio (A5, Fase 3) --------------------------------------------
+#
+# Cuando el turno trae una nota de voz, se suma esta regla al
+# `system_instruction` y se deshabilitan las tools (`tools=None`) para ese
+# turno: el modelo no puede actuar sobre lo que "cree" haber entendido del
+# audio sin que el cliente lo confirme primero en texto.
+VOICE_TURN_RULE = (
+    "Este turno incluye una nota de voz del cliente: resume PRIMERO en "
+    "texto lo que entendiste del audio y pide confirmación explícita antes "
+    "de actuar. No llames herramientas en este turno."
+)
 
 SYSTEM_PROMPT = """\
 Eres el asistente virtual de seguros de Colsubsidio: acompañas a las personas \
@@ -288,8 +301,29 @@ def _guard_reply(texto: str, ctx: ToolContext) -> str:
     return _plantilla_segura(ctx)
 
 
-def respond(session_id: str, content: str) -> ConversationResponse | None:
+def respond(
+    session_id: str,
+    content: str,
+    *,
+    audio_data: bytes | None = None,
+    audio_mime: str = "audio/ogg",
+) -> ConversationResponse | None:
     """Ejecuta un turno completo de conversación libre para `session_id`.
+
+    Si `audio_data` viene informado, el turno es de voz: el mensaje nuevo
+    incluye la nota de audio (y el `content` como caption de texto, si no
+    viene vacío), se deshabilitan las tools para ese turno (`tools=None`) y
+    al `system_instruction` se le suma `VOICE_TURN_RULE`, que pide al modelo
+    resumir en texto lo entendido y confirmar antes de actuar — nunca llamar
+    herramientas en ese mismo turno. Como defensa en profundidad (por si el
+    modelo desobedece la regla), cualquier `tool_call` recibido durante un
+    turno de audio se ignora sin ejecutarse: el loop simplemente continúa
+    hasta obtener una respuesta de texto. La transcripción que queda en el
+    historial de la sesión es el caption si lo hay, o el placeholder
+    `"[nota de voz]"` si el turno llegó sin texto.
+
+    El guard mecánico de precios (`_guard_reply`) se sigue aplicando al
+    texto final del turno, con o sin audio.
 
     Devuelve la sesión actualizada, o `None` si `session_id` no existe (sin
     llamar al LLM ni a ninguna tool).
@@ -298,11 +332,28 @@ def respond(session_id: str, content: str) -> ConversationResponse | None:
     if session is None:
         return None
 
+    is_audio_turn = audio_data is not None
+
     ctx = _ctx_from_session(session_id, session)
     contents = _contents_from_history(session)
-    contents.append(user_message(text_part(content)))
+
+    if is_audio_turn:
+        if content:
+            contents.append(
+                user_message(audio_part(audio_data, audio_mime), text_part(content))
+            )
+        else:
+            contents.append(user_message(audio_part(audio_data, audio_mime)))
+        transcript = content or "[nota de voz]"
+    else:
+        contents.append(user_message(text_part(content)))
+        transcript = content
 
     system_instruction = SYSTEM_PROMPT + "\n\n" + _build_status_summary(ctx)
+    if is_audio_turn:
+        system_instruction += "\n\n" + VOICE_TURN_RULE
+
+    tools = None if is_audio_turn else tool_declarations()
 
     texto_final = FALLBACK_MESSAGE
     cerrar_venta_result: dict | None = None
@@ -310,11 +361,16 @@ def respond(session_id: str, content: str) -> ConversationResponse | None:
     for _ in range(MAX_TOOL_ROUNDS):
         reply = generate_reply(
             contents,
-            tools=tool_declarations(),
+            tools=tools,
             system_instruction=system_instruction,
         )
 
         if reply.kind == "tool_call":
+            if is_audio_turn:
+                # Defensa en profundidad: aunque el modelo desobedezca la
+                # regla de voz (o el turno venga guionado con un tool_call
+                # malicioso), un turno de audio jamás ejecuta herramientas.
+                continue
             resultado = execute_tool(reply.tool_name, reply.tool_args, ctx)
             if reply.tool_name == "cerrar_venta" and "error" not in resultado:
                 cerrar_venta_result = resultado
@@ -342,7 +398,7 @@ def respond(session_id: str, content: str) -> ConversationResponse | None:
 
     _sync_ctx_to_session(session, ctx, cerrar_venta_result)
 
-    session.messages.append(Message(role="user", content=content))
+    session.messages.append(Message(role="user", content=transcript))
     session.messages.append(Message(role="assistant", content=texto_final))
 
     conversation_service._repo.save(session.session_id, session)
