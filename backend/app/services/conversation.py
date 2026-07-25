@@ -23,6 +23,7 @@ from app.schemas.conversation import (
 from app.services.propensity import PropensityService
 from app.services.quote import QuoteService
 from app.services.affiliate import AffiliateService
+from app.services.catalog import CatalogService
 from app.services.consent import ConsentService
 from app.repositories.conversations import ConversationRepository
 
@@ -34,6 +35,7 @@ class ConversationService:
         self._propensity = PropensityService()
         self._quote = QuoteService()
         self._affiliates = AffiliateService()
+        self._catalog = CatalogService()
         self._consent = ConsentService()
         self._repo = ConversationRepository()
 
@@ -101,6 +103,7 @@ class ConversationService:
             base_amount=quote_data["base_amount"],
             adjustments=quote_data["adjustments"],
             monthly_premium=quote_data["monthly_premium"],
+            annual_premium=quote_data["annual_premium"],
             coverage_details=quote_data["coverage_details"],
             exclusions=quote_data["exclusions"],
         )
@@ -178,6 +181,76 @@ class ConversationService:
         session.state = ConversationState.READY_FOR_PAYMENT
         self._repo.save(session.session_id, session)
         return application
+
+    # -- adjustments / comparison --------------------------------------------
+
+    def apply_adjustments(
+        self, session_id: str, adjustments: list[str]
+    ) -> ConversationResponse:
+        session = self._repo.find(session_id)
+        if not session:
+            raise ValueError("Session not found")
+
+        if session.profile is None or session.quote is None:
+            raise ValueError("Cannot adjust before a quote exists")
+
+        product = self._catalog.get_product("hogar-estandar")
+        available_codes = {adj.code for adj in (product.adjustments if product else [])}
+        for code in adjustments:
+            if code not in available_codes:
+                raise ValueError(f"Unknown adjustment code: {code}")
+
+        actual = session.quote.model_dump()
+        propuesta = self._quote.calculate_quote(session.profile, adjustments)
+        diferencia_mensual = round(
+            propuesta["monthly_premium"] - actual["monthly_premium"], 2
+        )
+        ajustes_disponibles = [
+            {"code": adj.code, "name": adj.name, "description": adj.description}
+            for adj in (product.adjustments if product else [])
+        ]
+
+        session.quote = QuoteDetail(
+            **{
+                k: v
+                for k, v in propuesta.items()
+                if k in QuoteDetail.model_fields
+            }
+        )
+
+        payload = {
+            "actual": actual,
+            "propuesta": propuesta,
+            "diferencia_mensual": diferencia_mensual,
+            "ajustes_disponibles": ajustes_disponibles,
+        }
+        content = (
+            f"⚖️ Comparación: diferencia ${diferencia_mensual:,.0f} COP/mes"
+        )
+
+        comparison_message = next(
+            (
+                msg
+                for msg in reversed(session.messages)
+                if msg.type == "comparison"
+            ),
+            None,
+        )
+        if comparison_message is not None:
+            comparison_message.payload = payload
+            comparison_message.content = content
+        else:
+            session.messages.append(
+                Message(
+                    role="assistant",
+                    type="comparison",
+                    content=content,
+                    payload=payload,
+                )
+            )
+
+        self._repo.save(session.session_id, session)
+        return session
 
 
 # Shared module-level instance so the REST API and the channel webhooks

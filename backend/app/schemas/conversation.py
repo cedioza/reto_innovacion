@@ -66,6 +66,10 @@ class MessageRequest(BaseModel):
     content: str = Field(min_length=1)
 
 
+class AdjustmentsRequest(BaseModel):
+    adjustments: list[str]
+
+
 class ConversationResponse(BaseModel):
     session_id: str
     state: ConversationState

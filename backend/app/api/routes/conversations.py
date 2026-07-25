@@ -7,6 +7,7 @@ returns the response. No business logic here.
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.conversation import (
+    AdjustmentsRequest,
     ConsentRequest,
     ConsentedApplication,
     ConversationCreate,
@@ -55,6 +56,16 @@ async def submit_consent(session_id: str, consent: ConsentRequest):
     try:
         return _service.submit_consent(session_id, consent.consent_given)
     except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/{session_id}/adjustments", response_model=ConversationResponse)
+async def apply_adjustments(session_id: str, body: AdjustmentsRequest):
+    try:
+        return _service.apply_adjustments(session_id, body.adjustments)
+    except ValueError as exc:
+        if str(exc) == "Session not found":
+            raise HTTPException(status_code=404, detail=str(exc))
         raise HTTPException(status_code=400, detail=str(exc))
 
 
