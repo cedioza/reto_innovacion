@@ -1,4 +1,4 @@
-"""Endpoint de health check, usado también para verificar el deploy en Railway."""
+"""Endpoint de health check, usado también como liveness del deploy (Dokploy)."""
 
 from fastapi import APIRouter
 

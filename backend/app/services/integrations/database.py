@@ -1,4 +1,4 @@
-"""Check activo de conectividad con Postgres (Railway u otro).
+"""Check activo de conectividad con Postgres (Dokploy u otro).
 
 Abre una conexión real con `psycopg` y ejecuta `SELECT 1` para confirmar que
 `DATABASE_URL` funciona de punta a punta. Nunca lanza excepción: cualquier
