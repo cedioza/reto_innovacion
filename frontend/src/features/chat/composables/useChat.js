@@ -11,12 +11,15 @@ const WELCOME_TEXT =
 const ERROR_TEXT = 'Ups, tuve un problema para responderte. Inténtalo de nuevo en un momento 🙏'
 
 function makeMessage(from, text, timestamp = new Date(), extra = {}) {
-  return { id: nextId++, from, text, timestamp, ...extra }
+  return { id: nextId++, from, text, type: 'text', payload: null, timestamp, ...extra }
 }
 
 function mapSessionMessages(sessionMessages) {
   return sessionMessages.map((message) =>
-    makeMessage(message.role === 'assistant' ? 'bot' : 'user', message.content, null),
+    makeMessage(message.role === 'assistant' ? 'bot' : 'user', message.content, null, {
+      type: message.type ?? 'text',
+      payload: message.payload ?? null,
+    }),
   )
 }
 
@@ -101,6 +104,10 @@ export function useChat() {
             message.role === 'assistant' ? 'bot' : 'user',
             message.content,
             previousTimestamps[prefix.length + index] ?? now,
+            {
+              type: message.type ?? 'text',
+              payload: message.payload ?? null,
+            },
           ),
         ),
       ]

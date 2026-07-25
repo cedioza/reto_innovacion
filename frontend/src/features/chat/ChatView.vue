@@ -2,12 +2,23 @@
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { useChat } from './composables/useChat'
 import MessageBubble from './components/MessageBubble.vue'
+import RecommendationCard from './components/RecommendationCard.vue'
+import QuoteCard from './components/QuoteCard.vue'
 import TypingIndicator from './components/TypingIndicator.vue'
 import ChatInput from './components/ChatInput.vue'
 
 const { messages, isTyping, sendMessage } = useChat()
 
 const messagesEl = ref(null)
+
+// Elige el componente de tarjeta según el tipo del mensaje. Sin payload
+// (nulo/indefinido) SIEMPRE cae a MessageBubble: nunca pantalla rota.
+function componentFor(message) {
+  if (!message.payload) return MessageBubble
+  if (message.type === 'recommendation') return RecommendationCard
+  if (message.type === 'quote') return QuoteCard
+  return MessageBubble
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -32,7 +43,12 @@ onMounted(scrollToBottom)
     </header>
 
     <div ref="messagesEl" class="messages">
-      <MessageBubble v-for="message in messages" :key="message.id" :message="message" />
+      <component
+        :is="componentFor(message)"
+        v-for="message in messages"
+        :key="message.id"
+        :message="message"
+      />
       <TypingIndicator v-if="isTyping" />
     </div>
 
