@@ -1,13 +1,15 @@
 """Cliente de bajo nivel para la API de Gemini (`generateContent`).
 
 Este módulo solo sabe hablar HTTP/JSON con Gemini: construye el payload,
-hace la llamada (con un reintento ante errores de red o 5xx) y traduce la
-respuesta a un `GeminiReply`. No ejecuta herramientas de negocio ni conoce
+hace la llamada (con reintentos ante errores de red, 5xx o 429 por rate
+limit) y traduce la respuesta a un `GeminiReply`. No ejecuta herramientas
+de negocio ni conoce
 las capas de `services`/`repositories` de la aplicación: eso vive en el
 service que use este cliente (fases siguientes del plan).
 """
 
 import base64
+import time
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -18,6 +20,47 @@ GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_M
 TIMEOUT = 30
 MAX_ATTEMPTS = 2
 FALLBACK_MESSAGE = "Lo siento, tuve un problema técnico. ¿Intentamos de nuevo?"
+
+# Reintentos ante 429 (rate limit del free tier de Gemini): son frecuentes en
+# conversaciones con varias llamadas seguidas (tool calling) y, a diferencia
+# de otros 4xx, sí conviene reintentar. Van en un presupuesto aparte de
+# `MAX_ATTEMPTS` (que rige red/5xx) para darles más margen.
+MAX_RATE_LIMIT_RETRIES = 2
+RATE_LIMIT_BACKOFF_SECONDS = (2.0, 4.0)
+# Tope al `retryDelay` que sugiere el body del 429: Google a veces pide ~30s,
+# demasiado para no bloquear la respuesta al usuario; preferimos reintentar
+# antes y, si sigue en 429, devolver el fallback.
+MAX_RATE_LIMIT_DELAY_SECONDS = 5.0
+
+
+def _sleep(seconds: float) -> None:
+    """Espera bloqueante, aislada en su propia función para poder parchearla en tests."""
+    time.sleep(seconds)
+
+
+def _rate_limit_delay_seconds(response: httpx.Response, attempt_index: int) -> float:
+    """Segundos a esperar antes de reintentar un 429.
+
+    Usa el `retryDelay` que Gemini sugiere en `error.details` del body (p. ej.
+    `"retryDelay": "30s"`), acotado a `MAX_RATE_LIMIT_DELAY_SECONDS`. Si el
+    body no trae esa información, cae al backoff fijo `RATE_LIMIT_BACKOFF_SECONDS`.
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    details = ((body.get("error") or {}).get("details")) or []
+    for detail in details:
+        if not isinstance(detail, dict):
+            continue
+        retry_delay = detail.get("retryDelay")
+        if isinstance(retry_delay, str) and retry_delay.endswith("s"):
+            try:
+                return min(float(retry_delay[:-1]), MAX_RATE_LIMIT_DELAY_SECONDS)
+            except ValueError:
+                continue
+    index = min(attempt_index, len(RATE_LIMIT_BACKOFF_SECONDS) - 1)
+    return RATE_LIMIT_BACKOFF_SECONDS[index]
 
 
 @dataclass
@@ -125,12 +168,15 @@ def generate_reply(
 
     headers = {"x-goog-api-key": settings.gemini_api_key}
 
-    for attempt in range(MAX_ATTEMPTS):
+    network_attempt = 0
+    rate_limit_attempt = 0
+    while True:
         try:
             with httpx.Client(timeout=TIMEOUT) as client:
                 response = client.post(GEMINI_URL, json=payload, headers=headers)
         except httpx.HTTPError:
-            if attempt < MAX_ATTEMPTS - 1:
+            if network_attempt < MAX_ATTEMPTS - 1:
+                network_attempt += 1
                 continue
             return GeminiReply(kind="error", text=FALLBACK_MESSAGE)
 
@@ -149,9 +195,13 @@ def generate_reply(
                 )
             return GeminiReply(kind="text", text=_extract_text(parts))
 
-        if response.status_code >= 500 and attempt < MAX_ATTEMPTS - 1:
+        if response.status_code == 429 and rate_limit_attempt < MAX_RATE_LIMIT_RETRIES:
+            _sleep(_rate_limit_delay_seconds(response, rate_limit_attempt))
+            rate_limit_attempt += 1
+            continue
+
+        if response.status_code >= 500 and network_attempt < MAX_ATTEMPTS - 1:
+            network_attempt += 1
             continue
 
         return GeminiReply(kind="error", text=FALLBACK_MESSAGE)
-
-    return GeminiReply(kind="error", text=FALLBACK_MESSAGE)

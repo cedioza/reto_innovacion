@@ -239,6 +239,101 @@ def test_generate_reply_status_401_does_not_retry_and_hides_api_key(monkeypatch)
     assert "super-secret-key" not in reply.text
 
 
+def _rate_limit_response(retry_delay: str | None = None) -> _FakeResponse:
+    body: dict = {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}}
+    if retry_delay is not None:
+        body["error"]["details"] = [
+            {
+                "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                "retryDelay": retry_delay,
+            }
+        ]
+    return _FakeResponse(429, text="rate limited", json_data=body)
+
+
+def test_generate_reply_retries_after_rate_limit_then_succeeds(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    sleeps: list = []
+    monkeypatch.setattr(gemini_client, "_sleep", lambda seconds: sleeps.append(seconds))
+    calls: list = []
+    _patch_client(
+        monkeypatch,
+        [_rate_limit_response(), _FakeResponse(200, json_data=_SUCCESS_JSON)],
+        calls,
+    )
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert reply.kind == "text"
+    assert reply.text == "¡Hola!"
+    assert len(calls) == 2
+    assert sleeps == [2.0]
+
+
+def test_generate_reply_retries_rate_limit_twice_then_succeeds(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    sleeps: list = []
+    monkeypatch.setattr(gemini_client, "_sleep", lambda seconds: sleeps.append(seconds))
+    calls: list = []
+    _patch_client(
+        monkeypatch,
+        [
+            _rate_limit_response(),
+            _rate_limit_response(),
+            _FakeResponse(200, json_data=_SUCCESS_JSON),
+        ],
+        calls,
+    )
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert reply.kind == "text"
+    assert len(calls) == 3
+    assert sleeps == [2.0, 4.0]
+
+
+def test_generate_reply_returns_fallback_after_exhausting_rate_limit_retries(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    monkeypatch.setattr(gemini_client, "_sleep", lambda seconds: None)
+    calls: list = []
+    _patch_client(
+        monkeypatch,
+        [_rate_limit_response(), _rate_limit_response(), _rate_limit_response()],
+        calls,
+    )
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert reply.kind == "error"
+    assert reply.text == gemini_client.FALLBACK_MESSAGE
+    assert len(calls) == 3
+
+
+def test_generate_reply_uses_retry_delay_from_body_capped(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    sleeps: list = []
+    monkeypatch.setattr(gemini_client, "_sleep", lambda seconds: sleeps.append(seconds))
+    calls: list = []
+    _patch_client(
+        monkeypatch,
+        [_rate_limit_response(retry_delay="30s"), _FakeResponse(200, json_data=_SUCCESS_JSON)],
+        calls,
+    )
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert reply.kind == "text"
+    assert sleeps == [gemini_client.MAX_RATE_LIMIT_DELAY_SECONDS]
+
+
 def test_generate_reply_without_api_key_makes_no_http_calls(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "")
     monkeypatch.setattr(
