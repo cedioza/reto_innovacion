@@ -105,9 +105,17 @@ def _ctx_from_session(session_id: str, session: ConversationResponse) -> ToolCon
 
 
 def _contents_from_history(session: ConversationResponse) -> list[dict]:
-    """Traduce `session.messages` (transcripción user/assistant) a `contents` Gemini."""
+    """Traduce `session.messages` (transcripción user/assistant) a `contents` Gemini.
+
+    Solo los mensajes de texto plano (`type == "text"`) se traducen: los
+    mensajes-tarjeta (`recommendation`/`quote`/`comparison`) son resúmenes
+    generados por código para la UI, no transcripción de la conversación, y
+    nunca deben reenviarse al LLM.
+    """
     contents: list[dict] = []
     for message in session.messages:
+        if message.type != "text":
+            continue
         if message.role == "user":
             contents.append(user_message(text_part(message.content)))
         elif message.role == "assistant":
@@ -357,6 +365,9 @@ def respond(
 
     texto_final = FALLBACK_MESSAGE
     cerrar_venta_result: dict | None = None
+    recomendar_seguro_result: dict | None = None
+    cotizar_result: dict | None = None
+    ajustar_comparar_result: dict | None = None
 
     for _ in range(MAX_TOOL_ROUNDS):
         reply = generate_reply(
@@ -372,8 +383,18 @@ def respond(
                 # malicioso), un turno de audio jamás ejecuta herramientas.
                 continue
             resultado = execute_tool(reply.tool_name, reply.tool_args, ctx)
-            if reply.tool_name == "cerrar_venta" and "error" not in resultado:
-                cerrar_venta_result = resultado
+            if "error" not in resultado:
+                if reply.tool_name == "cerrar_venta":
+                    cerrar_venta_result = resultado
+                elif reply.tool_name == "recomendar_seguro":
+                    recomendar_seguro_result = resultado
+                elif reply.tool_name == "cotizar":
+                    # `resultado` trae un `product_id` extra que el handler
+                    # anexa solo para el LLM; la tarjeta usa el dict tal
+                    # cual lo calculó el motor (`ctx.quote`), sin esa clave.
+                    cotizar_result = dict(ctx.quote) if ctx.quote else None
+                elif reply.tool_name == "ajustar_comparar":
+                    ajustar_comparar_result = resultado
             contents.append(
                 model_message(
                     function_call_part(
@@ -400,6 +421,80 @@ def respond(
 
     session.messages.append(Message(role="user", content=transcript))
     session.messages.append(Message(role="assistant", content=texto_final))
+    _append_card_messages(
+        session,
+        recomendar_seguro_result=recomendar_seguro_result,
+        cotizar_result=cotizar_result,
+        ajustar_comparar_result=ajustar_comparar_result,
+    )
 
     conversation_service._repo.save(session.session_id, session)
     return session
+
+
+def _append_card_messages(
+    session: ConversationResponse,
+    *,
+    recomendar_seguro_result: dict | None,
+    cotizar_result: dict | None,
+    ajustar_comparar_result: dict | None,
+) -> None:
+    """Agrega los mensajes-tarjeta del turno, en orden recommendation → quote → comparison.
+
+    Solo se emite tarjeta para las tools clave que corrieron con éxito en
+    ESTE turno (los resultados llegan `None` si la tool no corrió o falló).
+    El `content` de cada tarjeta es un resumen de una línea generado por
+    código, nunca por el LLM.
+    """
+    if recomendar_seguro_result is not None:
+        product_id = recomendar_seguro_result.get("product_id", "hogar-estandar")
+        product = CatalogService().get_product(product_id)
+        product_name = product.name if product else "Hogar Estándar"
+        reasons = recomendar_seguro_result.get("reasons", [])
+        session.messages.append(
+            Message(
+                role="assistant",
+                type="recommendation",
+                content=f"📋 Recomendación: {product_name}",
+                payload={
+                    "product_id": product_id,
+                    "product_name": product_name,
+                    "reasons": reasons,
+                },
+            )
+        )
+
+    if cotizar_result is not None:
+        monthly = cotizar_result.get("monthly_premium")
+        currency = cotizar_result.get("currency", "COP")
+        if monthly is not None:
+            resumen = f"💰 Cotización: ${_formato_miles(monthly)} {currency}/mes"
+        else:
+            resumen = "💰 Cotización calculada."
+        session.messages.append(
+            Message(
+                role="assistant",
+                type="quote",
+                content=resumen,
+                payload=cotizar_result,
+            )
+        )
+
+    if ajustar_comparar_result is not None:
+        diferencia = ajustar_comparar_result.get("diferencia_mensual")
+        if diferencia is not None:
+            signo = "-" if diferencia < 0 else "+"
+            resumen = (
+                "⚖️ Comparación de opciones: diferencia "
+                f"{signo}${_formato_miles(abs(diferencia))} COP/mes"
+            )
+        else:
+            resumen = "⚖️ Comparación de opciones."
+        session.messages.append(
+            Message(
+                role="assistant",
+                type="comparison",
+                content=resumen,
+                payload=ajustar_comparar_result,
+            )
+        )

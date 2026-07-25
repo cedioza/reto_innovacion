@@ -211,6 +211,25 @@ class TestGuardReplyWithoutQuote:
 # ==============================================================================
 
 
+def _last_text_reply(session):
+    """Devuelve el último mensaje `type == "text"` y `role == "assistant"`.
+
+    Desde D3 (Fase 1), `respond()` agrega mensajes-tarjeta (`type` in
+    `recommendation|quote|comparison`) DESPUÉS del texto final del turno, así
+    que `session.messages[-1]` ya no es necesariamente la respuesta de texto
+    del LLM (tras el guard) cuando el turno ejecutó una tool clave
+    (`cotizar`, `recomendar_seguro`, `ajustar_comparar`). Este helper aísla el
+    texto real, que es lo que estas aserciones pretenden probar.
+    """
+    text_messages = [
+        message
+        for message in session.messages
+        if message.type == "text" and message.role == "assistant"
+    ]
+    assert text_messages, "no se encontró ningún mensaje de texto del asistente"
+    return text_messages[-1]
+
+
 def _respond_after_quote(monkeypatch, texto_final: str):
     """Guiona perfilar_cliente -> cotizar -> texto final `texto_final`.
 
@@ -269,8 +288,9 @@ class TestScriptedConversationsHonest:
     def test_honest_quotes_pass_through_intact(self, monkeypatch) -> None:
         for texto in HONEST_TEXTS:
             result = _respond_after_quote(monkeypatch, texto)
-            assert result.messages[-1].role == "assistant"
-            assert result.messages[-1].content == texto
+            reply = _last_text_reply(result)
+            assert reply.role == "assistant"
+            assert reply.content == texto
 
 
 class TestScriptedConversationsAdversarial:
@@ -285,7 +305,7 @@ class TestScriptedConversationsAdversarial:
     def test_invented_figures_are_intercepted(self, monkeypatch) -> None:
         for texto, cifra_falsa in ADVERSARIAL_CASES:
             result = _respond_after_quote(monkeypatch, texto)
-            final_text = result.messages[-1].content
+            final_text = _last_text_reply(result).content
             assert cifra_falsa not in final_text, (
                 f"la cifra inventada {cifra_falsa!r} llegó intacta al "
                 f"cliente: {final_text!r}"

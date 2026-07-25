@@ -15,6 +15,8 @@ class ConversationState(str, Enum):
 class Message(BaseModel):
     role: str
     content: str
+    type: str = "text"
+    payload: Optional[dict] = None
 
 
 class ProfileData(BaseModel):
@@ -36,6 +38,7 @@ class QuoteDetail(BaseModel):
     base_amount: float
     adjustments: list[dict] = []
     monthly_premium: float
+    annual_premium: Optional[float] = None
     coverage_details: list[str]
     exclusions: list[str]
 
