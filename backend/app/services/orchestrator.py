@@ -11,6 +11,8 @@ que las tools le devuelven.
 
 from __future__ import annotations
 
+import re
+
 from app.schemas.conversation import (
     ConsentedApplication,
     ConversationResponse,
@@ -165,6 +167,120 @@ def _sync_ctx_to_session(
         session.application = ConsentedApplication(**cerrar_venta_result)
 
 
+# -- Guard mecánico de precios (A5, Fase 1) ---------------------------------
+#
+# El LLM nunca debería inventar cifras (regla 1 del SYSTEM_PROMPT), pero un
+# prompt es una esperanza, no una garantía: este guard es la versión
+# mecánica de esa regla, aplicada por código sobre CADA respuesta de texto
+# antes de que llegue al cliente. Ninguna cifra monetaria del texto final
+# puede quedar fuera del conjunto de valores que las tools calcularon de
+# verdad para esta sesión (`ctx.quote`).
+
+# Cifra con marcador "$" (con o sin espacio tras el símbolo). El número
+# admite separadores de miles ("." o ",") en grupos de exactamente 3
+# dígitos y, opcionalmente, una parte decimal final de 1-2 dígitos.
+_DOLLAR_PATTERN = re.compile(r"\$\s*(\d+(?:[.,]\d{3})*)([.,]\d{1,2})?")
+
+# Cifra sin "$" pero seguida de la palabra "pesos" o "COP" (case-insensitive)
+# como marcador monetario explícito.
+_WORD_PATTERN = re.compile(
+    r"(\d+(?:[.,]\d{3})*)([.,]\d{1,2})?\s*(?:pesos|cop)\b", re.IGNORECASE
+)
+
+
+def _normaliza_cifra(entero: str, decimal: str | None) -> float:
+    """Convierte los grupos capturados por los patrones monetarios a `float`.
+
+    `entero` puede traer separadores de miles ("." o ","), que se
+    descartan; `decimal`, si existe, trae su propio separador como primer
+    carácter (p. ej. ",50") que también se descarta antes de anexarlo como
+    parte decimal.
+    """
+    digitos_enteros = re.sub(r"[.,]", "", entero)
+    if decimal:
+        digitos_decimales = decimal[1:]
+        return float(f"{digitos_enteros}.{digitos_decimales}")
+    return float(digitos_enteros)
+
+
+def _extract_money_figures(texto: str) -> set[float]:
+    """Extrae del texto SOLO las cifras con marcador monetario explícito.
+
+    Decisión de diseño: un número sin "$", "pesos" o "COP" nunca dispara el
+    guard — así una edad ("35 años"), un estrato ("estrato 3"), un rango
+    ("26-40") o una referencia de tiempo ("5 minutos") jamás se confunden
+    con un precio. El separador decimal es el ÚLTIMO "."/"," seguido de
+    exactamente 1-2 dígitos; cualquier grupo de 3 dígitos tras un "."/","
+    se interpreta como separador de miles.
+    """
+    figuras: set[float] = set()
+    for patron in (_DOLLAR_PATTERN, _WORD_PATTERN):
+        for match in patron.finditer(texto):
+            entero, decimal = match.group(1), match.group(2)
+            figuras.add(_normaliza_cifra(entero, decimal))
+    return figuras
+
+
+def _allowed_figures(ctx: ToolContext) -> set[float]:
+    """Cifras monetarias con respaldo real: las que ya calculó el motor.
+
+    Sin cotización (`ctx.quote is None`) el conjunto es vacío — sin motor
+    que haya calculado nada, ninguna cifra tiene de dónde salir.
+    """
+    if ctx.quote is None:
+        return set()
+
+    campos = ("monthly_premium", "annual_premium", "base_amount")
+    return {
+        float(ctx.quote[campo])
+        for campo in campos
+        if ctx.quote.get(campo) is not None
+    }
+
+
+def _plantilla_segura(ctx: ToolContext) -> str:
+    """Respuesta de reemplazo cuando el texto del LLM cita una cifra sin respaldo.
+
+    La construye código, no el LLM: con cotización vigente cita la prima
+    real que calculó el motor; sin cotización, ninguna cifra en la
+    respuesta puede ser real (no hay motor que la haya calculado todavía),
+    así que se invita a cotizar en vez de citar cualquier número.
+    """
+    if ctx.quote is not None and ctx.quote.get("monthly_premium") is not None:
+        prima_mensual = _formato_miles(ctx.quote["monthly_premium"])
+        return (
+            "Para darte solo cifras exactas de nuestra cotización: tu prima "
+            f"mensual es de ${prima_mensual} COP. ¿Quieres ajustar coberturas "
+            "o seguimos con la compra?"
+        )
+
+    return (
+        "Prefiero no darte cifras hasta cotizarte con tus datos reales. "
+        "¿Te parece si completamos tu perfil y te cotizo con el motor?"
+    )
+
+
+def _formato_miles(monto: float) -> str:
+    """Formatea un monto con separador de miles "." (estilo colombiano)."""
+    return f"{round(monto):,}".replace(",", ".")
+
+
+def _guard_reply(texto: str, ctx: ToolContext) -> str:
+    """Guard mecánico: intercepta cifras monetarias sin respaldo en las tools.
+
+    Toda cifra monetaria extraída de `texto` debe estar en el conjunto de
+    cifras permitidas (`_allowed_figures`); si alguna queda fuera, el texto
+    completo se descarta y se reemplaza por la plantilla segura — no se
+    intenta "arreglar" la cifra sola, porque el resto de la frase alrededor
+    de una cifra inventada tampoco es confiable.
+    """
+    figuras = _extract_money_figures(texto)
+    permitidas = _allowed_figures(ctx)
+    if figuras.issubset(permitidas):
+        return texto
+    return _plantilla_segura(ctx)
+
+
 def respond(session_id: str, content: str) -> ConversationResponse | None:
     """Ejecuta un turno completo de conversación libre para `session_id`.
 
@@ -208,7 +324,7 @@ def respond(session_id: str, content: str) -> ConversationResponse | None:
             continue
 
         if reply.kind == "text":
-            texto_final = reply.text
+            texto_final = _guard_reply(reply.text, ctx)
             break
 
         # reply.kind == "error"
