@@ -32,3 +32,9 @@ class ApplicationRepository:
 
     def count(self) -> int:
         return len(self._apps)
+
+    def find_by_token(self, token: str) -> Any | None:
+        for _evidence_hash, application in self._apps.values():
+            if getattr(application, "handoff_token", None) == token:
+                return application
+        return None

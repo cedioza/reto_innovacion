@@ -38,7 +38,7 @@ from typing import Any, Callable
 from app.schemas.conversation import ProfileData, QuoteDetail, Recommendation
 from app.services.affiliate import AffiliateService
 from app.services.catalog import CatalogService
-from app.services.consent import ConsentService
+from app.services.consent import consent_service
 from app.services.propensity import PropensityService
 from app.services.quote import QuoteService
 
@@ -378,7 +378,7 @@ def _cerrar_venta(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         exclusions=ctx.quote.get("exclusions", []),
     )
 
-    application = ConsentService().capture(
+    application = consent_service.capture(
         session_id=ctx.session_id,
         product_id=product_id,
         profile=ctx.profile,

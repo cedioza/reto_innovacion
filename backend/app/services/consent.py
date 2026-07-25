@@ -105,3 +105,15 @@ class ConsentService:
         self, session_id: str
     ) -> ConsentedApplication | None:
         return self._repo.find(session_id)
+
+    def get_application_by_token(
+        self, token: str
+    ) -> ConsentedApplication | None:
+        return self._repo.find_by_token(token)
+
+
+# Instancia compartida de módulo: el camino REST (`conversation_service`) y el
+# camino tool (`agent_tools._cerrar_venta`) deben resolver el mismo
+# `handoff_token` contra el mismo `ApplicationRepository` en memoria, mismo
+# patrón que `conversation_service`.
+consent_service = ConsentService()
