@@ -1,0 +1,254 @@
+"""Tests del cliente de bajo nivel para Gemini (`generate_reply` + helpers).
+
+Fase 1 del plan: solo texto (nada de tools/audio todavía). El módulo bajo
+prueba (`app.services.integrations.gemini_client`) no existe aún, así que
+estos tests deben fallar con ModuleNotFoundError/ImportError hasta que se
+implemente en la siguiente tarea. Eso es intencional (TDD-light).
+"""
+
+import httpx
+
+from app.core.config import settings
+from app.services.integrations import gemini_client
+
+_SUCCESS_JSON = {"candidates": [{"content": {"parts": [{"text": "¡Hola!"}]}}]}
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, text: str = "", json_data: dict | None = None) -> None:
+        self.status_code = status_code
+        self.text = text
+        self.is_success = 200 <= status_code < 300
+        self._json_data = json_data
+
+    def json(self):
+        if self._json_data is None:
+            raise ValueError("respuesta fake sin cuerpo json")
+        return self._json_data
+
+
+class _ScriptedClient:
+    """Sustituto de httpx.Client con un guion de respuestas/excepciones.
+
+    `behaviors` y `calls` son listas compartidas entre instancias (la fábrica
+    que se le pasa a `monkeypatch.setattr(..., "Client", ...)` puede crear un
+    `_ScriptedClient` nuevo en cada llamada, típico si el cliente real se usa
+    con `with httpx.Client(...) as client:` dentro de un loop de reintento);
+    así el conteo de llamadas y el consumo del guion funcionan sin importar
+    si el módulo bajo prueba reutiliza un único cliente o crea uno por intento.
+    """
+
+    def __init__(self, behaviors: list, calls: list, captured: list | None = None) -> None:
+        self._behaviors = behaviors
+        self._calls = calls
+        self._captured = captured
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def post(self, *args, **kwargs):
+        self._calls.append(1)
+        if self._captured is not None:
+            self._captured.append({"args": args, "kwargs": kwargs})
+        behavior = self._behaviors.pop(0)
+        if isinstance(behavior, Exception):
+            raise behavior
+        return behavior
+
+
+def _patch_client(monkeypatch, behaviors: list, calls: list, captured: list | None = None) -> None:
+    monkeypatch.setattr(
+        gemini_client.httpx,
+        "Client",
+        lambda *a, **k: _ScriptedClient(behaviors, calls, captured),
+    )
+
+
+# --- Helpers puros (text_part / user_message / model_message) ---
+
+
+def test_text_part_builds_text_dict():
+    assert gemini_client.text_part("hola") == {"text": "hola"}
+
+
+def test_user_message_wraps_role_and_parts():
+    parts = [gemini_client.text_part("a"), gemini_client.text_part("b")]
+    assert gemini_client.user_message(*parts) == {"role": "user", "parts": parts}
+
+
+def test_model_message_wraps_role_and_parts():
+    part = gemini_client.text_part("respuesta")
+    assert gemini_client.model_message(part) == {"role": "model", "parts": [part]}
+
+
+# --- generate_reply: caso feliz ---
+
+
+def test_generate_reply_success_returns_text(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=_SUCCESS_JSON)], calls)
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert reply.kind == "text"
+    assert reply.text == "¡Hola!"
+    assert len(calls) == 1
+
+
+def test_generate_reply_concatenates_text_parts_and_tolerates_extra_keys(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    json_data = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {"text": "Hola "},
+                        {"text": "mundo", "thoughtSignature": "abc123"},
+                    ]
+                }
+            }
+        ]
+    }
+    calls: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=json_data)], calls)
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert reply.kind == "text"
+    assert reply.text == "Hola mundo"
+    assert len(calls) == 1
+
+
+# --- generate_reply: system_instruction en el payload ---
+
+
+def test_generate_reply_includes_system_instruction_when_given(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    captured: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=_SUCCESS_JSON)], calls, captured)
+
+    gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))],
+        system_instruction="Eres un asistente útil.",
+    )
+
+    assert len(captured) == 1
+    sent_payload = captured[0]["kwargs"]["json"]
+    assert sent_payload["systemInstruction"] == {
+        "parts": [{"text": "Eres un asistente útil."}]
+    }
+
+
+def test_generate_reply_omits_system_instruction_when_not_given(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    captured: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=_SUCCESS_JSON)], calls, captured)
+
+    gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert len(captured) == 1
+    sent_payload = captured[0]["kwargs"]["json"]
+    assert "systemInstruction" not in sent_payload
+
+
+# --- generate_reply: fallos de red / reintentos ---
+
+
+def test_generate_reply_returns_fallback_after_persistent_network_error(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    _patch_client(
+        monkeypatch,
+        [httpx.ConnectError("boom"), httpx.ConnectError("boom")],
+        calls,
+    )
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert reply.kind == "error"
+    assert reply.text == gemini_client.FALLBACK_MESSAGE
+    assert len(calls) == 2
+
+
+def test_generate_reply_retries_once_after_network_error_then_succeeds(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    _patch_client(
+        monkeypatch,
+        [httpx.ConnectError("boom"), _FakeResponse(200, json_data=_SUCCESS_JSON)],
+        calls,
+    )
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert reply.kind == "text"
+    assert reply.text == "¡Hola!"
+    assert len(calls) == 2
+
+
+def test_generate_reply_returns_fallback_after_persistent_server_error(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    _patch_client(
+        monkeypatch,
+        [
+            _FakeResponse(500, text="internal error"),
+            _FakeResponse(500, text="internal error"),
+        ],
+        calls,
+    )
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert reply.kind == "error"
+    assert reply.text == gemini_client.FALLBACK_MESSAGE
+    assert len(calls) == 2
+
+
+def test_generate_reply_status_401_does_not_retry_and_hides_api_key(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "super-secret-key")
+    calls: list = []
+    _patch_client(monkeypatch, [_FakeResponse(401, text="unauthorized")], calls)
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert reply.kind == "error"
+    assert len(calls) == 1
+    assert "super-secret-key" not in reply.text
+
+
+def test_generate_reply_without_api_key_makes_no_http_calls(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "")
+    monkeypatch.setattr(
+        gemini_client.httpx,
+        "Client",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("no debería llamar a httpx.Client sin API key")
+        ),
+    )
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert reply.kind == "error"
