@@ -437,3 +437,55 @@ def test_generate_reply_with_audio_part_sends_inline_data_and_returns_text(monke
 
     assert reply.kind == "text"
     assert reply.text == "dice hola"
+
+
+# --- historial de tool-use (Fase 1 del plan A3) ---
+
+
+def test_function_call_part_builds_function_call_dict():
+    part = gemini_client.function_call_part("cotizar", {"producto": "hogar"})
+
+    assert part == {
+        "functionCall": {"name": "cotizar", "args": {"producto": "hogar"}}
+    }
+
+
+def test_function_response_part_builds_function_response_dict():
+    part = gemini_client.function_response_part(
+        "cotizar", {"monthly_premium": 12345.0}
+    )
+
+    assert part == {
+        "functionResponse": {
+            "name": "cotizar",
+            "response": {"monthly_premium": 12345.0},
+        }
+    }
+
+
+def test_generate_reply_sends_two_turn_tool_use_history_intact(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    captured: list = []
+    json_data = {"candidates": [{"content": {"parts": [{"text": "Listo, tu cotización es 99."}]}}]}
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=json_data)], calls, captured)
+
+    contents = [
+        gemini_client.user_message(gemini_client.text_part("cotiza mi casa")),
+        gemini_client.model_message(
+            gemini_client.function_call_part("cotizar", {})
+        ),
+        gemini_client.user_message(
+            gemini_client.function_response_part(
+                "cotizar", {"monthly_premium": 99.0}
+            )
+        ),
+    ]
+
+    reply = gemini_client.generate_reply(contents)
+
+    assert len(captured) == 1
+    sent_payload = captured[0]["kwargs"]["json"]
+    assert sent_payload["contents"] == contents
+
+    assert reply.kind == "text"

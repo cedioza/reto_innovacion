@@ -45,6 +45,16 @@ def audio_part(data: bytes, mime_type: str = "audio/ogg") -> dict:
     }
 
 
+def function_call_part(name: str, args: dict) -> dict:
+    """Construye una `part` de tipo `functionCall` (petición de Gemini a usar una herramienta)."""
+    return {"functionCall": {"name": name, "args": args}}
+
+
+def function_response_part(name: str, response: dict) -> dict:
+    """Construye una `part` de tipo `functionResponse` (resultado de una herramienta para Gemini)."""
+    return {"functionResponse": {"name": name, "response": response}}
+
+
 def user_message(*parts: dict) -> dict:
     """Construye un mensaje de rol `user` con las `parts` dadas."""
     return {"role": "user", "parts": list(parts)}
