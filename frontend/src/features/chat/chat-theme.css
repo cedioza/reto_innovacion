@@ -1,0 +1,11 @@
+:root {
+  --chat-green: #00754a;
+  --chat-green-dark: #005c3a;
+  --chat-green-light: #e6f4ee;
+  --chat-bubble-user: #d9f2e6;
+  --chat-bubble-bot: #ffffff;
+  --chat-bg: #f4f6f5;
+  --chat-text: #1f2a24;
+  --chat-text-muted: #6b7570;
+  --chat-border: #e0e5e2;
+}
