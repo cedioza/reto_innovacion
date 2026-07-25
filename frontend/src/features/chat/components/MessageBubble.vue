@@ -20,7 +20,7 @@ function formatTime(timestamp) {
     <div v-if="message.from === 'bot'" class="avatar" aria-hidden="true">C</div>
     <div class="bubble">
       <p class="text">{{ message.text }}</p>
-      <span class="time">{{ formatTime(message.timestamp) }}</span>
+      <span v-if="message.timestamp" class="time">{{ formatTime(message.timestamp) }}</span>
     </div>
   </div>
 </template>

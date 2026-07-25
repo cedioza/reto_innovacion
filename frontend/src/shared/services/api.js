@@ -3,16 +3,35 @@
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+const DEFAULT_TIMEOUT_MS = 60000
+
 // Convención: todos los paths llevan el prefijo /api/v1 explícito (contrato del backend)
 async function request(path, options = {}) {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options,
-  })
-  if (!response.ok) {
-    throw new Error(`Error HTTP ${response.status} en ${path}`)
+  const { timeout = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeout)
+  try {
+    const response = await fetch(`${BASE_URL}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...fetchOptions.headers },
+      ...fetchOptions,
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      const error = new Error(`Error HTTP ${response.status} en ${path}`)
+      error.status = response.status
+      throw error
+    }
+    return await response.json()
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const timeoutError = new Error(`Timeout tras ${timeout}ms en ${path}`)
+      timeoutError.isTimeout = true
+      throw timeoutError
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
   }
-  return response.json()
 }
 
 export const api = {
@@ -23,4 +42,16 @@ export const api = {
 
 export function getHealth() {
   return api.get('/api/v1/health')
+}
+
+export function createConversation() {
+  return api.post('/api/v1/conversations', {})
+}
+
+export function getConversation(sessionId) {
+  return api.get(`/api/v1/conversations/${sessionId}`)
+}
+
+export function postMessage(sessionId, content) {
+  return api.post(`/api/v1/conversations/${sessionId}/message`, { content })
 }
