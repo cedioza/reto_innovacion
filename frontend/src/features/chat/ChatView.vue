@@ -105,13 +105,4 @@ onMounted(scrollToBottom)
   gap: 0.6rem;
   scroll-behavior: smooth;
 }
-
-@media (max-width: 640px) {
-  .chat-view {
-    max-width: 100%;
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
-  }
-}
 </style>
