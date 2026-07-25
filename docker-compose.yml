@@ -1,0 +1,21 @@
+# BD local de desarrollo — NO se usa en deploy (Dokploy tiene su propio Postgres).
+services:
+  db:
+    image: postgres:17
+    container_name: reto-innovacion-db
+    environment:
+      POSTGRES_USER: reto
+      POSTGRES_PASSWORD: reto  # solo desarrollo local
+      POSTGRES_DB: reto_innovacion
+    ports:
+      - "5432:5432"
+    volumes:
+      - reto_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reto -d reto_innovacion"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  reto_pgdata:

@@ -44,6 +44,34 @@ def verificar_prerequisitos() -> None:
         sys.exit(1)
 
 
+def levantar_db_local() -> None:
+    if shutil.which("docker") is None:
+        print("Docker no está disponible: la BD local no se levanta (opcional, ver README).")
+        return
+
+    print("Levantando BD local (docker compose) — puede tardar la primera vez (descarga la imagen)…")
+    try:
+        resultado = subprocess.run(
+            ["docker", "compose", "up", "-d", "db"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        print("No se pudo levantar la BD local: docker compose tardó demasiado (opcional, continuando).")
+        return
+    except Exception as exc:
+        print(f"No se pudo levantar la BD local: {exc} (opcional, continuando).")
+        return
+
+    if resultado.returncode == 0:
+        print("BD local (postgres 17) arriba — docker compose up -d db")
+    else:
+        motivo = (resultado.stderr or resultado.stdout or "error desconocido").strip().splitlines()[-1]
+        print(f"No se pudo levantar la BD local: {motivo} (opcional, continuando).")
+
+
 def lanzar(nombre: str, comando: list[str], cwd: Path) -> subprocess.Popen:
     proc = subprocess.Popen(
         comando,
@@ -83,6 +111,7 @@ def detener(proc: subprocess.Popen) -> None:
 
 def main() -> None:
     verificar_prerequisitos()
+    levantar_db_local()
     npm = shutil.which("npm")
     if npm is None:
         print("No se encontró npm en el PATH.", file=sys.stderr)

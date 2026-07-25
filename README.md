@@ -56,3 +56,29 @@ Ambos proyectos se despliegan en **Dokploy**:
 - Cada paquete (`backend/`, `frontend/`) tiene su propio README con instrucciones detalladas.
 - Las contribuciones se hacen vía pull request hacia `master`.
 - **Trabajo con IA (Claude Code, Codex, gentle-ai)**: ver [README-IA.md](README-IA.md) — flujo homologado de planes por fases, reglas y setup por herramienta.
+
+### Base de datos local
+
+Postgres 17 vía Docker Compose, igual versión que en la nube (Dokploy tiene su propio Postgres; esto es solo para desarrollo local):
+
+```bash
+docker compose up -d db
+```
+
+Configura en `backend/.env`:
+
+```
+DATABASE_URL=postgresql://reto:reto@localhost:5432/reto_innovacion
+```
+
+Para detenerla (los datos persisten en el volumen):
+
+```bash
+docker compose down
+```
+
+Para detenerla y borrar los datos:
+
+```bash
+docker compose down -v
+```
