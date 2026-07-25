@@ -314,3 +314,31 @@ ocurrió (tolerante) — la validación fina del tono es manual en el chat.
 
 🛑 **CHECKPOINT** — fin del plan.
 **Commit sugerido**: `test(back): add gated live check for orchestrator flow`
+
+---
+
+## 📌 Nota post-ejecución (2026-07-25) — ✅ RESUELTA el mismo día: se habilitó la
+## Gemini API en el proyecto de la key nueva y `test_orchestrator_live.py` pasó
+## (1 passed, 74s, conversación real multi-turno). Queda solo el recordatorio de
+## cuota para la demo (punto 1: canjear créditos del kit). Texto original:
+
+El plan se ejecutó completo y la suite quedó verde (201 passed + 6 skipped), pero la
+corrida live de `tests/test_orchestrator_live.py` quedó **diferida por problemas de
+API key**, no de código (el loop completo SÍ se validó en vivo durante la Fase 3:
+perfiló → recomendó → cotizó → texto cálido, `state: quote_ready`):
+
+1. **Key original**: cuota diaria del free tier agotada — `RESOURCE_EXHAUSTED`,
+   `limit: 20 requests/día por modelo`. **20 req/día no alcanza para una demo**
+   (cada conversación gasta 3-5 llamadas) → canjear los créditos de Gemini del kit
+   del evento o usar proyecto con billing.
+2. **Key nueva (otra cuenta)**: el proyecto GCP `670140603794` tiene la **Gemini API
+   deshabilitada** — 403 `SERVICE_DISABLED`. Habilitarla en:
+   `https://console.developers.google.com/apis/api/generativelanguage.googleapis.com/overview?project=670140603794`
+   y esperar unos minutos de propagación.
+
+**Para cerrar el pendiente**: habilitar la API (o key con créditos) y correr desde
+`backend/`: `RUN_LIVE_GEMINI_TESTS=1 .venv/Scripts/python.exe -m pytest tests/test_orchestrator_live.py -q -s`.
+
+Mejora aplicada de paso durante el diagnóstico: `gemini_client` ahora reintenta 429
+con backoff respetando el `retryDelay` de Google (antes un rate-limit puntual
+producía fallback inmediato al usuario).
