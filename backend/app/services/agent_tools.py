@@ -36,6 +36,8 @@ from typing import Any, Callable
 
 from app.schemas.conversation import ProfileData
 from app.services.affiliate import AffiliateService
+from app.services.propensity import PropensityService
+from app.services.quote import QuoteService
 
 
 @dataclass
@@ -153,12 +155,88 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     }
 
 
+# -- recomendar_seguro ----------------------------------------------------------
+
+_RECOMENDAR_SEGURO_DECLARATION: dict[str, Any] = {
+    "name": "recomendar_seguro",
+    "description": (
+        "Evalúa la propensión del perfil del cliente (ya obtenido con "
+        "perfilar_cliente) usando el motor de reglas explicable y devuelve "
+        "el producto recomendado junto con las razones que sustentan la "
+        "recomendación."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {},
+    },
+}
+
+
+def _sin_perfil_error() -> dict[str, Any]:
+    return {
+        "error": "falta el perfil del cliente",
+        "detail": "perfila primero al cliente con perfilar_cliente",
+    }
+
+
+def _recomendar_seguro(
+    args: dict[str, Any], ctx: ToolContext
+) -> dict[str, Any]:
+    if ctx.profile is None:
+        return _sin_perfil_error()
+
+    result = PropensityService().evaluate(ctx.profile)
+    ctx.recommendation = result
+    return result
+
+
+# -- cotizar -----------------------------------------------------------------
+
+_COTIZAR_DECLARATION: dict[str, Any] = {
+    "name": "cotizar",
+    "description": (
+        "Calcula la prima del seguro de hogar con el motor determinista de "
+        "tarifas del catálogo, a partir del perfil del cliente ya obtenido "
+        "con perfilar_cliente. El precio siempre sale del motor, nunca se "
+        "inventa."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "adjustments": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Códigos de ajustes opcionales del catálogo.",
+            },
+        },
+    },
+}
+
+
+def _cotizar(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    if ctx.profile is None:
+        return _sin_perfil_error()
+
+    adjustments = args.get("adjustments") or []
+    result = QuoteService().calculate_quote(ctx.profile, adjustments)
+    ctx.quote = result
+    return {**result, "product_id": "hogar-estandar"}
+
+
 # -- registro --------------------------------------------------------------
 
 AGENT_TOOLS: dict[str, AgentTool] = {
     "perfilar_cliente": AgentTool(
         declaration=_PERFILAR_CLIENTE_DECLARATION,
         handler=_perfilar_cliente,
+    ),
+    "recomendar_seguro": AgentTool(
+        declaration=_RECOMENDAR_SEGURO_DECLARATION,
+        handler=_recomendar_seguro,
+    ),
+    "cotizar": AgentTool(
+        declaration=_COTIZAR_DECLARATION,
+        handler=_cotizar,
     ),
 }
 

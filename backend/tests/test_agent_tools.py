@@ -16,6 +16,9 @@ import tempfile
 
 from app.core.config import settings
 from app.schemas.conversation import ProfileData
+from app.services.catalog import CatalogService
+from app.services.propensity import PropensityService
+from app.services.quote import QuoteService
 
 from app.services.agent_tools import (
     AGENT_TOOLS,
@@ -175,6 +178,133 @@ class TestExecuteToolUnknownName:
         ctx = ToolContext()
 
         result = execute_tool("tool_inexistente", {}, ctx)
+
+        assert isinstance(result, dict)
+        assert "error" in result
+
+
+# --- Fase 2: recomendar_seguro + cotizar ---
+
+FAVORABLE_PROFILE = ProfileData(
+    age_range="26-40", stratum=3, property_type="house", zone="urban"
+)
+
+
+class TestToolDeclarationsPhase2:
+    def test_includes_recomendar_seguro_and_cotizar(self) -> None:
+        declarations = tool_declarations()
+        names = [decl["name"] for decl in declarations]
+
+        assert "recomendar_seguro" in names
+        assert "cotizar" in names
+
+    def test_has_three_unique_declarations_with_required_keys(self) -> None:
+        declarations = tool_declarations()
+        names = [decl["name"] for decl in declarations]
+
+        assert len(declarations) == 3
+        assert len(names) == len(set(names))
+        for decl in declarations:
+            assert "name" in decl
+            assert "description" in decl
+            assert "parameters" in decl
+
+
+class TestRecomendarSeguro:
+    def test_favorable_profile_matches_propensity_engine(self) -> None:
+        ctx = ToolContext(session_id="s1")
+        ctx.profile = FAVORABLE_PROFILE.model_copy()
+
+        result = execute_tool("recomendar_seguro", {}, ctx)
+
+        expected = PropensityService().evaluate(FAVORABLE_PROFILE)
+
+        assert result["recommended"] is True
+        assert result["recommended"] == expected["recommended"]
+        assert result["product_id"] == expected["product_id"]
+        assert result["score"] == expected["score"]
+        assert result["reasons"] == expected["reasons"]
+        for reason in result["reasons"]:
+            assert set(reason.keys()) >= {"code", "label", "evidence"}
+
+        assert ctx.recommendation is not None
+
+    def test_result_is_json_safe(self) -> None:
+        ctx = ToolContext()
+        ctx.profile = FAVORABLE_PROFILE.model_copy()
+
+        result = execute_tool("recomendar_seguro", {}, ctx)
+
+        json.dumps(result)
+
+    def test_without_profile_returns_controlled_error(self) -> None:
+        ctx = ToolContext()
+        assert ctx.profile is None
+
+        result = execute_tool("recomendar_seguro", {}, ctx)
+
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert ctx.recommendation is None
+
+
+class TestCotizar:
+    def test_without_adjustments_matches_quote_engine_exactly(self) -> None:
+        ctx = ToolContext(session_id="s1")
+        ctx.profile = FAVORABLE_PROFILE.model_copy()
+
+        result = execute_tool("cotizar", {}, ctx)
+
+        expected = QuoteService().calculate_quote(FAVORABLE_PROFILE)
+
+        assert result["monthly_premium"] == expected["monthly_premium"]
+        assert result["annual_premium"] == expected["annual_premium"]
+
+        assert ctx.quote is not None
+
+    def test_result_is_json_safe(self) -> None:
+        ctx = ToolContext()
+        ctx.profile = FAVORABLE_PROFILE.model_copy()
+
+        result = execute_tool("cotizar", {}, ctx)
+
+        json.dumps(result)
+
+    def test_with_valid_adjustment_matches_quote_engine(self) -> None:
+        product = CatalogService().get_product("hogar-estandar")
+        assert product is not None
+        assert len(product.adjustments) >= 1
+        adjustment_code = product.adjustments[0].code
+
+        ctx = ToolContext(session_id="s1")
+        ctx.profile = FAVORABLE_PROFILE.model_copy()
+
+        result = execute_tool(
+            "cotizar", {"adjustments": [adjustment_code]}, ctx
+        )
+
+        expected = QuoteService().calculate_quote(
+            FAVORABLE_PROFILE, [adjustment_code]
+        )
+
+        assert result["annual_premium"] == expected["annual_premium"]
+        assert result["monthly_premium"] == expected["monthly_premium"]
+
+        result_adjustment_codes = [
+            a.get("code") for a in result.get("adjustment_details", [])
+        ] or [a.get("code") for a in result.get("adjustments", [])]
+        assert adjustment_code in result_adjustment_codes
+
+        base_ctx = ToolContext(session_id="s2")
+        base_ctx.profile = FAVORABLE_PROFILE.model_copy()
+        base_result = execute_tool("cotizar", {}, base_ctx)
+        assert result["annual_premium"] != base_result["annual_premium"]
+
+    def test_without_profile_returns_controlled_error(self) -> None:
+        ctx = ToolContext()
+        assert ctx.profile is None
+
+        result = execute_tool("cotizar", {}, ctx)
 
         assert isinstance(result, dict)
         assert "error" in result
