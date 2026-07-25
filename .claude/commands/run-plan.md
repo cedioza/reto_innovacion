@@ -31,6 +31,28 @@ tool (`subagent_type`: `implementer`, `test-runner`, `debugger`).
    sin resolver → resuélvelas con el usuario ANTES de ejecutar nada.**
 3. Pregunta al usuario desde qué fase arrancar (por defecto: la primera sin ejecutar).
 
+## Paso 0.5 — Preparar la rama de ejecución (única excepción de git del orquestador)
+
+Antes de la primera fase, deja el punto de partida limpio y crea la rama del plan:
+
+1. **Working tree limpio**: `git status` — si hay cambios sin commitear, ⛔ STOP y
+   resuélvelo con el usuario (jamás stash ni descartes por tu cuenta).
+2. **Arrancar desde `master`**: si no estás en `master`, cámbiate (`git checkout master`).
+3. **`master` al día**: `git fetch origin` y compara con `origin/master`:
+   - al día → continúa;
+   - detrás (solo fast-forward) → `git pull --ff-only origin master`;
+   - divergida o el pull falla → ⛔ STOP y decide con el usuario.
+4. **Crear la rama del plan**: `git checkout -b plan/<slug-del-plan>` (el slug del
+   archivo del plan sin fecha ni extensión, p. ej.
+   `plan/remediacion-violaciones-reglas-backend`). Si la rama ya existe (ejecución
+   retomada), pregunta al usuario si continuar sobre ella o crear otra.
+5. Todos los commits de los checkpoints los hace el usuario **sobre esta rama**; al
+   final del plan se integra a `master` vía pull request.
+
+Estas operaciones (`status`, `fetch`, `checkout`, `pull --ff-only`, `checkout -b`) son
+lo ÚNICO de git que el orquestador puede ejecutar, y solo en este paso. Sigue prohibido
+add/commit/push/merge/rebase, aquí y en todas las fases.
+
 ## Loop por fase (en orden, sin saltarse ninguna)
 
 Para cada fase N del plan:
@@ -70,7 +92,9 @@ Para cada fase N del plan:
 
 ## Guardarraíles transversales
 
-- Nadie (ni tú ni los agentes) ejecuta git: ni add, ni commit, ni push, ni branch.
+- Nadie (ni tú ni los agentes) ejecuta git: ni add, ni commit, ni push, ni branch —
+  con la única excepción del **Paso 0.5** (preparación de la rama del plan por el
+  orquestador).
 - Nunca avanzar de fase con la verificación en rojo, ni "dejarlo para luego" sin
   decirlo explícitamente.
 - Agente atascado 2 veces en su tarea → STOP y consulta al usuario. Nunca hagas tú
@@ -84,5 +108,6 @@ Para cada fase N del plan:
 ## Al terminar la última fase
 
 Resumen final: fases ejecutadas por proyecto, commits sugeridos (y cuáles hizo el
-usuario), verificación completa en verde (pytest + build), y pendientes/deuda anotada.
-No hagas nada más.
+usuario), verificación completa en verde (pytest + build), pendientes/deuda anotada, y
+el recordatorio de abrir el **pull request de `plan/<slug>` hacia `master`** (lo abre
+el usuario). No hagas nada más.
