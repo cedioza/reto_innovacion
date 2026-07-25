@@ -31,6 +31,7 @@ corregir el rumbo en el siguiente turno.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -316,10 +317,25 @@ _CERRAR_VENTA_DECLARATION: dict[str, Any] = {
                     "venta. Debe ser true."
                 ),
             },
+            "email": {
+                "type": "string",
+                "description": (
+                    "Correo del cliente para enviarle el link de cierre."
+                ),
+            },
         },
-        "required": ["consentimiento"],
+        "required": ["consentimiento", "email"],
     },
 }
+
+_EMAIL_RE = re.compile(r"^\S+@\S+\.\S+$")
+
+
+def _correo_invalido_error() -> dict[str, Any]:
+    return {
+        "error": "falta el correo del cliente",
+        "detail": "pide al cliente su correo para enviarle el link de cierre",
+    }
 
 
 def _cerrar_venta(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
@@ -338,6 +354,10 @@ def _cerrar_venta(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         return _sin_cotizacion_error()
     if ctx.recommendation is None:
         return _sin_recomendacion_error()
+
+    email = args.get("email")
+    if not email or not _EMAIL_RE.match(email):
+        return _correo_invalido_error()
 
     product_id = ctx.recommendation.get("product_id", "hogar-estandar")
     product = CatalogService().get_product(product_id)
@@ -364,6 +384,7 @@ def _cerrar_venta(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         profile=ctx.profile,
         recommendation=recommendation,
         quote=quote,
+        email=email,
     )
 
     return application.model_dump(mode="json")

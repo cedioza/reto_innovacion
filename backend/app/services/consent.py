@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 
 from app.schemas.conversation import (
@@ -18,6 +19,10 @@ from app.schemas.conversation import (
     ConversationState,
 )
 from app.repositories.applications import ApplicationRepository
+from app.services import handoff
+from app.services.integrations import resend_client
+
+logger = logging.getLogger(__name__)
 
 
 class ConsentService:
@@ -31,11 +36,17 @@ class ConsentService:
         profile: ProfileData,
         recommendation: Recommendation,
         quote: QuoteDetail,
+        email: str | None = None,
     ) -> ConsentedApplication:
         """Capture consent and create an application.
 
         Generates an evidence hash from the recommendation and quote
         to provide a tamper-evident record of what was consented to.
+
+        Siempre genera el token de handoff y la aseguradora simulada
+        asociada al producto. Si hay email, dispara el correo de
+        comprobante (best-effort: un fallo o una excepción de Resend
+        nunca rompen el cierre, solo se loguea).
         """
         timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -51,6 +62,9 @@ class ConsentService:
             json.dumps(evidence_payload, sort_keys=True).encode()
         ).hexdigest()[:16]
 
+        handoff_token = handoff.new_token()
+        insurer_name = handoff.insurer_for(product_id)
+
         application = ConsentedApplication(
             session_id=session_id,
             product_id=product_id,
@@ -59,9 +73,32 @@ class ConsentService:
             quote=quote,
             consent_timestamp=timestamp,
             state=ConversationState.READY_FOR_PAYMENT,
+            email=email,
+            handoff_token=handoff_token,
+            insurer_name=insurer_name,
         )
 
         self._repo.save(session_id, evidence_hash, application)
+
+        if email:
+            try:
+                subject, html = handoff.build_handoff_email(
+                    application, handoff_token
+                )
+                result = resend_client.send_email(email, subject, html)
+                if not result.get("ok", False):
+                    logger.error(
+                        "fallo al enviar correo de handoff para session_id=%s",
+                        session_id,
+                    )
+            except Exception:  # noqa: BLE001 - best-effort, nunca rompe el cierre
+                logger.error(
+                    "excepcion al enviar correo de handoff para session_id=%s",
+                    session_id,
+                )
+        else:
+            logger.info("sin correo de destino, no se envía handoff")
+
         return application
 
     def get_application(

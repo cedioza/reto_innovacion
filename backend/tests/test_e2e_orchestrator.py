@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.main import app
 from app.schemas.conversation import ProfileData
+from app.services.integrations import resend_client
 from app.services.integrations.gemini_client import GeminiReply
 from app.services.quote import QuoteService
 
@@ -204,6 +205,12 @@ class TestAfiliadoPorDocumento:
 
 class TestFlujoCompletoHastaCierre:
     def test_flujo_completo_hasta_cierre(self, monkeypatch) -> None:
+        # Ajuste E1/Fase 2: `cerrar_venta` exige `email` — se agrega uno
+        # válido al guion y se mockea `resend_client.send_email` (cero red
+        # real); el detalle del correo lo cubre `test_handoff_flow.py`.
+        monkeypatch.setattr(
+            resend_client, "send_email", lambda *a, **k: {"ok": True, "id": "x"}
+        )
         session_id = _create_session()
 
         script = [
@@ -236,7 +243,10 @@ class TestFlujoCompletoHastaCierre:
             GeminiReply(
                 kind="tool_call",
                 tool_name="cerrar_venta",
-                tool_args={"consentimiento": True},
+                tool_args={
+                    "consentimiento": True,
+                    "email": "cliente@example.com",
+                },
                 thought_signature="sig-4",
             ),
             GeminiReply(

@@ -54,7 +54,9 @@ async def accept_quote(session_id: str):
 @router.post("/{session_id}/consent", response_model=ConsentedApplication)
 async def submit_consent(session_id: str, consent: ConsentRequest):
     try:
-        return _service.submit_consent(session_id, consent.consent_given)
+        return _service.submit_consent(
+            session_id, consent.consent_given, consent.email
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

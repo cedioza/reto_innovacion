@@ -45,6 +45,7 @@ class QuoteDetail(BaseModel):
 
 class ConsentRequest(BaseModel):
     consent_given: bool
+    email: Optional[str] = None
 
 
 class ConsentedApplication(BaseModel):
@@ -55,6 +56,9 @@ class ConsentedApplication(BaseModel):
     quote: QuoteDetail
     consent_timestamp: str
     state: ConversationState = ConversationState.READY_FOR_PAYMENT
+    email: Optional[str] = None
+    handoff_token: Optional[str] = None
+    insurer_name: Optional[str] = None
 
 
 class ConversationCreate(BaseModel):
