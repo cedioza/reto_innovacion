@@ -17,6 +17,7 @@ import tempfile
 from app.core.config import settings
 from app.schemas.conversation import ProfileData
 from app.services.catalog import CatalogService
+from app.services.integrations import resend_client
 from app.services.propensity import PropensityService
 from app.services.quote import QuoteService
 
@@ -438,14 +439,25 @@ class TestAjustarCompararSinCotizacion:
 
 
 class TestCerrarVenta:
+    # Nota (ajuste E1/Fase 2): `cerrar_venta` ahora exige `email` (además de
+    # `consentimiento`) para cerrar — se agrega un correo válido al guion y
+    # se mockea `resend_client.send_email` (cero red real) para no romper
+    # estos tests que ejercitan el camino feliz de cierre. El detalle del
+    # correo lo cubre `tests/test_handoff_flow.py`; aquí solo se evita que el
+    # nuevo parámetro requerido tumbe estos tests preexistentes.
     def test_consent_true_reaches_ready_for_payment_with_intact_price(
-        self,
+        self, monkeypatch
     ) -> None:
+        monkeypatch.setattr(
+            resend_client, "send_email", lambda *a, **k: {"ok": True, "id": "x"}
+        )
         ctx = _build_full_funnel_ctx()
         premium_before_close = ctx.quote["monthly_premium"]
 
         result = execute_tool(
-            "cerrar_venta", {"consentimiento": True}, ctx
+            "cerrar_venta",
+            {"consentimiento": True, "email": "cliente@example.com"},
+            ctx,
         )
 
         assert result["state"] == "ready_for_payment"
@@ -454,11 +466,16 @@ class TestCerrarVenta:
         assert result.get("product_id")
         assert result["quote"]["monthly_premium"] == premium_before_close
 
-    def test_result_is_json_safe(self) -> None:
+    def test_result_is_json_safe(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            resend_client, "send_email", lambda *a, **k: {"ok": True, "id": "x"}
+        )
         ctx = _build_full_funnel_ctx()
 
         result = execute_tool(
-            "cerrar_venta", {"consentimiento": True}, ctx
+            "cerrar_venta",
+            {"consentimiento": True, "email": "cliente@example.com"},
+            ctx,
         )
 
         json.dumps(result)
@@ -500,8 +517,13 @@ class TestFunnelEndToEndSinLLM:
     """Mini-e2e del contrato de tools sin LLM, sobre un mismo ToolContext."""
 
     def test_full_funnel_via_execute_tool_reaches_ready_for_payment(
-        self,
+        self, monkeypatch
     ) -> None:
+        # Ajuste E1/Fase 2: `cerrar_venta` exige `email` — se agrega uno
+        # válido y se mockea `resend_client.send_email` (cero red real).
+        monkeypatch.setattr(
+            resend_client, "send_email", lambda *a, **k: {"ok": True, "id": "x"}
+        )
         ctx = ToolContext(session_id="sesion-test")
 
         perfilar_result = execute_tool(
@@ -524,7 +546,9 @@ class TestFunnelEndToEndSinLLM:
             "ajustar_comparar", {"adjustments": [adjustment_code]}, ctx
         )
         cerrar_result = execute_tool(
-            "cerrar_venta", {"consentimiento": True}, ctx
+            "cerrar_venta",
+            {"consentimiento": True, "email": "cliente@example.com"},
+            ctx,
         )
 
         for result in (

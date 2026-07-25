@@ -155,7 +155,10 @@ class ConversationService:
     # -- consent -------------------------------------------------------------
 
     def submit_consent(
-        self, session_id: str, consent_given: bool
+        self,
+        session_id: str,
+        consent_given: bool,
+        email: str | None = None,
     ) -> ConsentedApplication:
         session = self._repo.find(session_id)
         if not session:
@@ -176,6 +179,7 @@ class ConversationService:
             profile=session.profile,
             recommendation=session.recommendation,
             quote=session.quote,
+            email=email,
         )
 
         session.state = ConversationState.READY_FOR_PAYMENT
