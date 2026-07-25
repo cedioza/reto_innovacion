@@ -63,7 +63,7 @@ class ConversationService:
             profile=profile,
             next_action="Contanos sobre tu hogar para recomendarte el seguro ideal",
         )
-        self._repo.save(session)
+        self._repo.save(session.session_id, session)
         return session
 
     def get(self, session_id: str) -> ConversationResponse | None:
@@ -120,7 +120,7 @@ class ConversationService:
             )
         )
         session.next_action = "Revisá la cotización y coberturas, podés ajustar las opciones"
-        self._repo.save(session)
+        self._repo.save(session.session_id, session)
         return session
 
     # -- accept quote --------------------------------------------------------
@@ -146,7 +146,7 @@ class ConversationService:
             )
         )
         session.next_action = "Dá tu consentimiento para generar la solicitud"
-        self._repo.save(session)
+        self._repo.save(session.session_id, session)
         return session
 
     # -- consent -------------------------------------------------------------
@@ -176,5 +176,10 @@ class ConversationService:
         )
 
         session.state = ConversationState.READY_FOR_PAYMENT
-        self._repo.save(session)
+        self._repo.save(session.session_id, session)
         return application
+
+
+# Shared module-level instance so the REST API and the channel webhooks
+# (WhatsApp, Telegram) orchestrate the same in-memory sessions.
+conversation_service = ConversationService()

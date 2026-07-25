@@ -1,6 +1,6 @@
 from app.schemas.conversation import ProfileData
 from app.schemas.product import ProductResponse
-from app.repositories.catalog import CatalogRepository
+from app.services.catalog import CatalogService
 from app.models.product import Adjustment
 
 
@@ -13,7 +13,7 @@ class QuoteService:
     """
 
     def __init__(self) -> None:
-        self._catalog = CatalogRepository()
+        self._catalog = CatalogService()
 
     def calculate_quote(
         self,

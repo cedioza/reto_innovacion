@@ -22,7 +22,7 @@ class TestConversationRepository:
 
     def test_save_and_find(self) -> None:
         s = self._session()
-        self.repo.save(s)
+        self.repo.save(s.session_id, s)
         found = self.repo.find("sess-1")
         assert found is not None
         assert found.session_id == "sess-1"
@@ -34,21 +34,24 @@ class TestConversationRepository:
 
     def test_save_overwrites_existing(self) -> None:
         s1 = self._session("sess-1")
-        self.repo.save(s1)
+        self.repo.save(s1.session_id, s1)
         s2 = self._session("sess-1")
         s2.state = ConversationState.QUOTE_READY
-        self.repo.save(s2)
+        self.repo.save(s2.session_id, s2)
         found = self.repo.find("sess-1")
         assert found is not None
         assert found.state == ConversationState.QUOTE_READY
 
     def test_delete_removes_session(self) -> None:
-        self.repo.save(self._session())
+        s = self._session()
+        self.repo.save(s.session_id, s)
         self.repo.delete("sess-1")
         assert self.repo.find("sess-1") is None
 
     def test_count(self) -> None:
         assert self.repo.count() == 0
-        self.repo.save(self._session("a"))
-        self.repo.save(self._session("b"))
+        a = self._session("a")
+        b = self._session("b")
+        self.repo.save(a.session_id, a)
+        self.repo.save(b.session_id, b)
         assert self.repo.count() == 2

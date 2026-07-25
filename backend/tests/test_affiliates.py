@@ -3,6 +3,7 @@
 from pathlib import Path
 import tempfile
 
+from app.core.config import settings
 from app.repositories.affiliates import AffiliateRepository
 from app.services.affiliate import AffiliateService
 from app.schemas.conversation import ProfileData
@@ -50,6 +51,15 @@ class TestAffiliateRepository:
         repo = AffiliateRepository(csv_path="/tmp/nonexistent.csv")
         result = repo.find_by_document("A001")
         assert result is None
+
+    def test_uses_settings_affiliate_csv_path_when_no_explicit_path(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(settings, "affiliate_csv_path", self.tmp.name)
+        repo = AffiliateRepository()
+        profile = repo.find_by_document("A001")
+        assert profile is not None
+        assert profile.document_number == "A001"
 
 
 class TestAffiliateService:

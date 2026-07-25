@@ -15,14 +15,13 @@ use an in-memory dictionary.
 from __future__ import annotations
 
 import csv
-import os
 from pathlib import Path
 
+from app.core.config import settings
 from app.models.affiliate import AffiliateProfile
 
-AFFILIATE_CSV_PATH = os.getenv(
-    "AFFILIATE_CSV_PATH",
-    str(Path(__file__).resolve().parent.parent.parent / "data" / "afiliados.csv"),
+DEFAULT_AFFILIATE_CSV_PATH = str(
+    Path(__file__).resolve().parent.parent.parent / "data" / "afiliados.csv"
 )
 
 
@@ -30,7 +29,9 @@ class AffiliateRepository:
     """Repository backed by an in-memory dict built from CSV."""
 
     def __init__(self, csv_path: str | None = None) -> None:
-        self._csv_path = csv_path or AFFILIATE_CSV_PATH
+        self._csv_path = (
+            csv_path or settings.affiliate_csv_path or DEFAULT_AFFILIATE_CSV_PATH
+        )
         self._profiles: dict[str, AffiliateProfile] | None = None
 
     # -- public API -----------------------------------------------------------

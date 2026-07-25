@@ -13,10 +13,10 @@ from app.schemas.conversation import (
     ConversationResponse,
     ProfileData,
 )
-from app.services.conversation import ConversationService
+from app.services.conversation import conversation_service
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["conversations"])
-_service = ConversationService()
+_service = conversation_service
 
 
 @router.post("", response_model=ConversationResponse, status_code=201)

@@ -3,14 +3,13 @@ import hmac
 import json
 import time
 
-import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.services.channel_handler import ChannelHandler
-from app.services.telegram_client import send_telegram_message
+from app.services.telegram_client import send_telegram_message, set_telegram_webhook
 from app.services.whatsapp_provider import send_whatsapp_message
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -25,7 +24,11 @@ async def verify_whatsapp_webhook(request: Request):
     token = request.query_params.get("hub.verify_token")
     challenge = request.query_params.get("hub.challenge")
 
-    if mode == "subscribe" and token == settings.whatsapp_verify_token:
+    if (
+        settings.whatsapp_verify_token
+        and mode == "subscribe"
+        and token == settings.whatsapp_verify_token
+    ):
         return PlainTextResponse(challenge, status_code=200)
 
     return PlainTextResponse("Forbidden", status_code=403)
@@ -138,7 +141,12 @@ async def receive_ycloud_whatsapp(request: Request):
 
 
 @router.post("/telegram")
-async def receive_telegram(payload: dict):
+async def receive_telegram(request: Request, payload: dict):
+    if settings.telegram_webhook_secret:
+        received_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+        if not hmac.compare_digest(received_token, settings.telegram_webhook_secret):
+            return JSONResponse({"detail": "Invalid secret token"}, status_code=401)
+
     try:
         message = payload.get("message", {})
         chat = message.get("chat", {})
@@ -154,26 +162,11 @@ async def receive_telegram(payload: dict):
     return {"status": "ok"}
 
 
-@router.get("/telegram/set")
-async def set_telegram_webhook():
-    if not settings.telegram_bot_token:
-        return {"ok": False, "error": "telegram_bot_token not configured"}
+@router.post("/telegram/set")
+async def register_telegram_webhook():
+    result = set_telegram_webhook()
 
-    public_url = settings.frontend_url.replace("http://", "https://")
-    if "localhost" in public_url or "127.0.0.1" in public_url:
-        public_url = "https://tu-dominio.com"
+    if result.get("ok") is False:
+        return JSONResponse(result, status_code=503)
 
-    webhook_url = f"{public_url}/webhooks/telegram"
-    api_url = (
-        f"https://api.telegram.org/bot{settings.telegram_bot_token}"
-        f"/setWebhook?url={webhook_url}"
-    )
-
-    if settings.telegram_webhook_secret:
-        api_url += f"&secret_token={settings.telegram_webhook_secret}"
-
-    try:
-        resp = httpx.get(api_url, timeout=10)
-        return resp.json()
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+    return result

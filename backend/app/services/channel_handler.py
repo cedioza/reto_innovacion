@@ -5,7 +5,7 @@ from app.schemas.conversation import (
     ConversationState,
     ProfileData,
 )
-from app.services.conversation import ConversationService
+from app.services.conversation import ConversationService, conversation_service
 
 AFFIRMATIVE = {"si", "sí", "acepto", "ok", "dale", "confirmo", "consiento", "claro", "dale"}
 AGE_PATTERNS = [
@@ -72,8 +72,8 @@ READY_TEXT = (
 
 
 class ChannelHandler:
-    def __init__(self) -> None:
-        self._service = ConversationService()
+    def __init__(self, service: ConversationService | None = None) -> None:
+        self._service = service or conversation_service
         self._sessions: dict[str, str] = {}
         self._pending_field: dict[str, str | None] = {}
 

@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     frontend_url: str = "http://localhost:5173"
+    backend_public_url: str = ""
 
     gemini_api_key: str = ""
     whatsapp_token: str = ""
@@ -17,7 +18,7 @@ class Settings(BaseSettings):
     resend_test_to: str = ""
     telegram_bot_token: str = ""
     telegram_test_chat_id: str = ""
-    whatsapp_verify_token: str = "colsubsidio-reto-2026"
+    whatsapp_verify_token: str = ""
     telegram_webhook_secret: str = ""
     whatsapp_provider: str = "ycloud"
     ycloud_api_key: str = ""
@@ -25,6 +26,7 @@ class Settings(BaseSettings):
     ycloud_webhook_secret: str = ""
     ycloud_allow_unsigned_webhooks: bool = False
     ycloud_webhook_tolerance_seconds: int = 300
+    affiliate_csv_path: str = ""
 
 
 settings = Settings()

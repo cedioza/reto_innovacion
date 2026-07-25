@@ -47,3 +47,4 @@ npm run dev
 
 - Cada paquete (`backend/`, `frontend/`) tiene su propio README con instrucciones detalladas.
 - Las contribuciones se hacen vía pull request hacia `main`.
+- **Trabajo con IA (Claude Code, Codex, gentle-ai)**: ver [README-IA.md](README-IA.md) — flujo homologado de planes por fases, reglas y setup por herramienta.

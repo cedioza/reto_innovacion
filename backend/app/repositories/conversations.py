@@ -6,17 +6,17 @@ Thread-safe for single-process use.
 
 from __future__ import annotations
 
-from app.schemas.conversation import ConversationResponse
+from typing import Any
 
 
 class ConversationRepository:
     def __init__(self) -> None:
-        self._sessions: dict[str, ConversationResponse] = {}
+        self._sessions: dict[str, Any] = {}
 
-    def save(self, session: ConversationResponse) -> None:
-        self._sessions[session.session_id] = session
+    def save(self, session_id: str, session: Any) -> None:
+        self._sessions[session_id] = session
 
-    def find(self, session_id: str) -> ConversationResponse | None:
+    def find(self, session_id: str) -> Any | None:
         return self._sessions.get(session_id)
 
     def delete(self, session_id: str) -> None:
