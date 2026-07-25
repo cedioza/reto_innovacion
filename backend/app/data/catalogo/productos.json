@@ -1,0 +1,76 @@
+[
+  {
+    "id": "hogar-estandar",
+    "name": "Hogar Estándar",
+    "description": "Protección integral para tu hogar: incendio, daños eléctricos, rotura de cristales, daños por agua y hurto.",
+    "category": "hogar",
+    "coverages": [
+      {
+        "name": "Incendio",
+        "description": "Cobertura ante daños por incendio, rayos y explosiones."
+      },
+      {
+        "name": "Daños Eléctricos",
+        "description": "Protección ante cortocircuitos, sobretensión y daños eléctricos."
+      },
+      {
+        "name": "Rotura de Cristales",
+        "description": "Cubre rotura de vidrios, espejos y cristales del hogar."
+      },
+      {
+        "name": "Daños por Agua",
+        "description": "Cobertura por daños de tuberías, filtraciones y humedad."
+      },
+      {
+        "name": "Hurto",
+        "description": "Protección ante robo de bienes del hogar."
+      }
+    ],
+    "exclusions": [
+      {
+        "name": "Desgaste Natural",
+        "description": "Daños por uso normal, deterioro o falta de mantenimiento."
+      },
+      {
+        "name": "Actos Intencionales",
+        "description": "Daños causados intencionalmente por el tomador."
+      },
+      {
+        "name": "Eventos Catastróficos",
+        "description": "Terremotos, inundaciones, erupciones volcánicas."
+      },
+      {
+        "name": "Guerra",
+        "description": "Daños derivados de guerra, terrorismo o conflicto armado."
+      }
+    ],
+    "adjustments": [
+      {
+        "code": "fire_alarm",
+        "name": "Alarma Contra Incendios",
+        "description": "Instalación de alarma y extintor",
+        "premium_modifier": 0.85
+      },
+      {
+        "code": "security_system",
+        "name": "Sistema de Seguridad",
+        "description": "Cámara y alarma perimetral",
+        "premium_modifier": 0.80
+      },
+      {
+        "code": "high_value",
+        "name": "Contenido de Alto Valor",
+        "description": "Equipos electrónicos y joyas",
+        "premium_modifier": 1.25
+      }
+    ],
+    "base_price": 45000.0,
+    "currency": "COP",
+    "factors": {
+      "age_range": {
+        "18-25": 1.15,
+        "65+": 1.15
+      }
+    }
+  }
+]

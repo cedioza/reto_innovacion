@@ -31,3 +31,5 @@ class Product:
     adjustments: list[Adjustment]
     base_price: float
     currency: str = "COP"
+    category: str = "hogar"
+    factors: dict = field(default_factory=dict)

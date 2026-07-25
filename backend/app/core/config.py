@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     ycloud_allow_unsigned_webhooks: bool = False
     ycloud_webhook_tolerance_seconds: int = 300
     affiliate_csv_path: str = ""
+    catalog_json_path: str = ""
 
 
 settings = Settings()
