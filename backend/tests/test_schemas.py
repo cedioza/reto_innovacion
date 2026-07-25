@@ -55,8 +55,8 @@ class TestConversationResponse:
 
 
 class TestConversationState:
-    def test_has_five_states(self):
-        assert len(ConversationState) == 5
+    def test_has_six_states(self):
+        assert len(ConversationState) == 6
 
     def test_enum_values(self):
         assert ConversationState.COLLECTING_PROFILE.value == "collecting_profile"
@@ -64,6 +64,7 @@ class TestConversationState:
         assert ConversationState.QUOTE_READY.value == "quote_ready"
         assert ConversationState.AWAITING_CONSENT.value == "awaiting_consent"
         assert ConversationState.READY_FOR_PAYMENT.value == "ready_for_payment"
+        assert ConversationState.FINALIZED_DEMO.value == "finalizada_demo"
 
 
 class TestProductResponse:

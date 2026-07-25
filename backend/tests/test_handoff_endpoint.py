@@ -194,3 +194,79 @@ class TestHandoffTokenInventado:
         # "de gratis" por el 404 por defecto de FastAPI ante rutas
         # desconocidas -- no es señal de que la Fase 1 ya esté implementada.
         assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Fase 2: POST /api/v1/handoff/{token}/finalize -> estado `finalizada_demo`,
+# idempotente. Cubre
+# .claude/analysis/plans/20260725-e2-pagina-aseguradora-simulada.plan.md
+# (Fase 2). RED esperado antes de implementar: `POST .../finalize` no existe
+# -> 405 (la ruta base `/{token}` sí existe desde la Fase 1, pero solo
+# soporta GET) o 404 si `/finalize` no matchea ningun path -- cualquiera de
+# los dos es la razón correcta de fallo, ninguno es 200. El GET posterior
+# de estos tests que espera `finalizada_demo` falla porque el estado del
+# enum `ConversationState.FINALIZED_DEMO` todavía no existe (AttributeError
+# en el helper de comparación / el valor jamás aparece en la respuesta).
+# ---------------------------------------------------------------------------
+
+
+class TestHandoffFinalize:
+    def test_finalize_feliz_devuelve_200_con_estado_finalizada_demo(
+        self, monkeypatch
+    ):
+        application = _seed_rest_application(monkeypatch)
+        token = application["handoff_token"]
+
+        response = client.post(f"/api/v1/handoff/{token}/finalize")
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["state"] == "finalizada_demo"
+
+    def test_finalize_es_idempotente_segundo_post_devuelve_mismo_body(
+        self, monkeypatch
+    ):
+        application = _seed_rest_application(monkeypatch)
+        token = application["handoff_token"]
+
+        first = client.post(f"/api/v1/handoff/{token}/finalize")
+        assert first.status_code == 200, first.text
+
+        second = client.post(f"/api/v1/handoff/{token}/finalize")
+        assert second.status_code == 200, second.text
+
+        assert second.json() == first.json()
+
+    def test_get_handoff_posterior_al_finalize_refleja_finalizada_demo(
+        self, monkeypatch
+    ):
+        application = _seed_rest_application(monkeypatch)
+        token = application["handoff_token"]
+
+        finalize_resp = client.post(f"/api/v1/handoff/{token}/finalize")
+        assert finalize_resp.status_code == 200, finalize_resp.text
+
+        get_resp = client.get(f"/api/v1/handoff/{token}")
+
+        assert get_resp.status_code == 200, get_resp.text
+        assert get_resp.json()["state"] == "finalizada_demo"
+
+    def test_finalize_no_cambia_el_estado_de_la_sesion_de_conversacion(
+        self, monkeypatch
+    ):
+        application = _seed_rest_application(monkeypatch)
+        token = application["handoff_token"]
+        session_id = application["session_id"]
+
+        finalize_resp = client.post(f"/api/v1/handoff/{token}/finalize")
+        assert finalize_resp.status_code == 200, finalize_resp.text
+
+        session_resp = client.get(f"/api/v1/conversations/{session_id}")
+
+        assert session_resp.status_code == 200, session_resp.text
+        assert session_resp.json()["state"] == "ready_for_payment"
+
+    def test_finalize_con_token_inventado_devuelve_404(self):
+        response = client.post("/api/v1/handoff/no-existe-xyz/finalize")
+
+        assert response.status_code == 404

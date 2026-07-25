@@ -14,12 +14,7 @@ from app.services.consent import consent_service
 router = APIRouter(prefix="/handoff", tags=["handoff"])
 
 
-@router.get("/{token}", response_model=HandoffSummary)
-async def get_handoff(token: str):
-    application = consent_service.get_application_by_token(token)
-    if application is None:
-        raise HTTPException(status_code=404, detail="Handoff not found")
-
+def _summary_from(application) -> HandoffSummary:
     quote = application.quote
     recommendation = application.recommendation
     state = application.state
@@ -37,3 +32,22 @@ async def get_handoff(token: str):
         state=state_value,
         consent_timestamp=application.consent_timestamp,
     )
+
+
+@router.get("/{token}", response_model=HandoffSummary)
+async def get_handoff(token: str):
+    application = consent_service.get_application_by_token(token)
+    if application is None:
+        raise HTTPException(status_code=404, detail="Handoff not found")
+
+    return _summary_from(application)
+
+
+@router.post("/{token}/finalize", response_model=HandoffSummary)
+async def finalize_handoff(token: str):
+    try:
+        application = consent_service.finalize_by_token(token)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Handoff not found")
+
+    return _summary_from(application)

@@ -10,6 +10,7 @@ class ConversationState(str, Enum):
     QUOTE_READY = "quote_ready"
     AWAITING_CONSENT = "awaiting_consent"
     READY_FOR_PAYMENT = "ready_for_payment"
+    FINALIZED_DEMO = "finalizada_demo"
 
 
 class Message(BaseModel):
