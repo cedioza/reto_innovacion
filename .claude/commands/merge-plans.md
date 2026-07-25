@@ -88,9 +88,16 @@ Con TODAS las ramas mergeadas:
 
 1. Por cada rama integrada:
    `powershell -NoProfile -File .claude/parallel/plan-state.ps1 -Action update -Id <id> -Status merged`
-2. Limpieza (solo si TODO quedó verde y pusheado): `git worktree remove` del de
-   integración y de los `plan-<id>` mergeados (`git worktree remove ../worktrees/plan-<id>`;
-   las ramas remotas quedan como registro — el usuario decide si borrarlas).
+2. Limpieza (solo si TODO quedó verde y pusheado). ⚠️ **SIEMPRE desenlazar la
+   junction ANTES de remover un worktree** — el borrado recursivo puede seguirla y
+   **vaciar el `node_modules` REAL del repo principal** (incidente ocurrido el
+   25-jul-2026; costó un `npm ci`):
+   ```
+   cmd /c rmdir "<worktree>\frontend\node_modules"     ← quita SOLO el enlace
+   git worktree remove <worktree>
+   ```
+   Aplícalo al de integración y a cada `plan-<id>` mergeado. Las ramas remotas
+   quedan como registro — el usuario decide si borrarlas.
 3. Recuerda al usuario actualizar su copia: `git pull` en `<main>` (master avanzó).
 4. **Resumen final**: ramas mergeadas y en qué orden, cuántos conflictos hubo, en
    qué archivos y cómo se resolvió cada uno (una línea por conflicto), resultado

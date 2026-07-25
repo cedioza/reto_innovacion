@@ -73,6 +73,13 @@ Cada worktree se bootstrapea solo: junction de `frontend/node_modules` al del re
 principal y pytest con el venv del principal por ruta absoluta (todo eso está
 gitignorado y un worktree nuevo no lo trae).
 
+⚠️ **Regla de oro al borrar un worktree**: primero `cmd /c rmdir
+"<wt>\frontend\node_modules"` (quita SOLO el enlace) y recién después
+`git worktree remove <wt>`. Un borrado recursivo directo puede seguir la junction y
+**vaciar el `node_modules` real del repo principal** (pasó el 25-jul-2026 y costó un
+`npm ci`). Los hardlinks de `.env` no tienen este riesgo: borrar el nombre-enlace
+nunca toca el contenido mientras exista el original.
+
 ## Secretos y `.env` en los worktrees
 
 **Por defecto, los worktrees NO reciben ningún `.env`.** La suite completa del
