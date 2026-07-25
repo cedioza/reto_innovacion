@@ -1,5 +1,12 @@
 import { ref } from 'vue'
-import { createConversation, getConversation, postAdjustments, postMessage } from '../../../shared/services/api'
+import {
+  createConversation,
+  getConversation,
+  postAccept,
+  postAdjustments,
+  postConsent,
+  postMessage,
+} from '../../../shared/services/api'
 
 const SESSION_STORAGE_KEY = 'chat_session_id'
 
@@ -31,6 +38,7 @@ export function useChat() {
   const messages = ref([...prefix])
   const isTyping = ref(false)
   const isAdjusting = ref(false)
+  const isClosing = ref(false)
   let sessionId = null
 
   const storedSessionId = localStorage.getItem(SESSION_STORAGE_KEY)
@@ -142,5 +150,49 @@ export function useChat() {
     }
   }
 
-  return { messages, isTyping, isAdjusting, sendMessage, applyAdjustments }
+  // Confirma la cotización actual y avanza la conversación a consentimiento.
+  // No debería llamarse sin sesión activa (la tarjeta que la dispara solo
+  // existe dentro de una).
+  async function acceptQuote() {
+    if (!sessionId) return
+
+    isClosing.value = true
+    try {
+      const session = await postAccept(sessionId)
+      syncMessagesFromSession(session)
+    } catch (err) {
+      messages.value = [...messages.value, makeMessage('bot', ERROR_TEXT, new Date(), { isError: true })]
+    } finally {
+      isClosing.value = false
+    }
+  }
+
+  // Envía el consentimiento. El endpoint devuelve la solicitud (application),
+  // no la sesión, así que se re-sincroniza con `getConversation` para pintar
+  // el mensaje de éxito que el backend agregó a la sesión.
+  async function submitConsent(email) {
+    if (!sessionId) return
+
+    isClosing.value = true
+    try {
+      await postConsent(sessionId, email)
+      const session = await getConversation(sessionId)
+      syncMessagesFromSession(session)
+    } catch (err) {
+      messages.value = [...messages.value, makeMessage('bot', ERROR_TEXT, new Date(), { isError: true })]
+    } finally {
+      isClosing.value = false
+    }
+  }
+
+  return {
+    messages,
+    isTyping,
+    isAdjusting,
+    isClosing,
+    sendMessage,
+    applyAdjustments,
+    acceptQuote,
+    submitConsent,
+  }
 }

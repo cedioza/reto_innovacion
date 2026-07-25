@@ -59,3 +59,11 @@ export function postMessage(sessionId, content) {
 export function postAdjustments(sessionId, adjustments) {
   return api.post(`/api/v1/conversations/${sessionId}/adjustments`, { adjustments })
 }
+
+export function postAccept(sessionId) {
+  return api.post(`/api/v1/conversations/${sessionId}/accept`, {})
+}
+
+export function postConsent(sessionId, email) {
+  return api.post(`/api/v1/conversations/${sessionId}/consent`, { consent_given: true, email })
+}
