@@ -68,13 +68,7 @@ function formatTime(timestamp) {
         </ul>
       </details>
 
-      <button
-        type="button"
-        class="adjust-btn"
-        disabled
-        hidden
-        @click="$emit('adjust')"
-      >
+      <button type="button" class="adjust-btn" @click="$emit('adjust')">
         Ajustar coberturas
       </button>
 

@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { createConversation, getConversation, postMessage } from '../../../shared/services/api'
+import { createConversation, getConversation, postAdjustments, postMessage } from '../../../shared/services/api'
 
 const SESSION_STORAGE_KEY = 'chat_session_id'
 
@@ -30,10 +30,33 @@ export function useChat() {
   let prefix = [makeMessage('bot', WELCOME_TEXT)]
   const messages = ref([...prefix])
   const isTyping = ref(false)
+  const isAdjusting = ref(false)
   let sessionId = null
 
   const storedSessionId = localStorage.getItem(SESSION_STORAGE_KEY)
   let hydrationPromise = null
+
+  // Reconstruye `messages` desde `session.messages` conservando el prefijo local
+  // y los timestamps ya pintados (mismo camino que usa `sendMessage`).
+  function syncMessagesFromSession(session) {
+    const previousTimestamps = messages.value.map((message) => message.timestamp)
+    const now = new Date()
+
+    messages.value = [
+      ...prefix,
+      ...session.messages.map((message, index) =>
+        makeMessage(
+          message.role === 'assistant' ? 'bot' : 'user',
+          message.content,
+          previousTimestamps[prefix.length + index] ?? now,
+          {
+            type: message.type ?? 'text',
+            payload: message.payload ?? null,
+          },
+        ),
+      ),
+    ]
+  }
 
   if (storedSessionId) {
     hydrationPromise = getConversation(storedSessionId)
@@ -94,23 +117,7 @@ export function useChat() {
         }
       }
 
-      const previousTimestamps = messages.value.map((message) => message.timestamp)
-      const now = new Date()
-
-      messages.value = [
-        ...prefix,
-        ...session.messages.map((message, index) =>
-          makeMessage(
-            message.role === 'assistant' ? 'bot' : 'user',
-            message.content,
-            previousTimestamps[prefix.length + index] ?? now,
-            {
-              type: message.type ?? 'text',
-              payload: message.payload ?? null,
-            },
-          ),
-        ),
-      ]
+      syncMessagesFromSession(session)
     } catch (err) {
       messages.value = [...messages.value, makeMessage('bot', ERROR_TEXT, new Date(), { isError: true })]
     } finally {
@@ -118,5 +125,22 @@ export function useChat() {
     }
   }
 
-  return { messages, isTyping, sendMessage }
+  // Recotiza por REST (sin LLM): usada por el toggle del comparador y por el
+  // botón "Ajustar coberturas" de la cotización. No debería llamarse sin
+  // sesión activa (la tarjeta que la dispara solo existe dentro de una).
+  async function applyAdjustments(codes) {
+    if (!sessionId) return
+
+    isAdjusting.value = true
+    try {
+      const session = await postAdjustments(sessionId, codes)
+      syncMessagesFromSession(session)
+    } catch (err) {
+      messages.value = [...messages.value, makeMessage('bot', ERROR_TEXT, new Date(), { isError: true })]
+    } finally {
+      isAdjusting.value = false
+    }
+  }
+
+  return { messages, isTyping, isAdjusting, sendMessage, applyAdjustments }
 }

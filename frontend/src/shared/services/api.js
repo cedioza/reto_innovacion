@@ -55,3 +55,7 @@ export function getConversation(sessionId) {
 export function postMessage(sessionId, content) {
   return api.post(`/api/v1/conversations/${sessionId}/message`, { content })
 }
+
+export function postAdjustments(sessionId, adjustments) {
+  return api.post(`/api/v1/conversations/${sessionId}/adjustments`, { adjustments })
+}

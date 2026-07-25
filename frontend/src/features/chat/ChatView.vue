@@ -4,10 +4,11 @@ import { useChat } from './composables/useChat'
 import MessageBubble from './components/MessageBubble.vue'
 import RecommendationCard from './components/RecommendationCard.vue'
 import QuoteCard from './components/QuoteCard.vue'
+import CompareCard from './components/CompareCard.vue'
 import TypingIndicator from './components/TypingIndicator.vue'
 import ChatInput from './components/ChatInput.vue'
 
-const { messages, isTyping, sendMessage } = useChat()
+const { messages, isTyping, isAdjusting, sendMessage, applyAdjustments } = useChat()
 
 const messagesEl = ref(null)
 
@@ -17,7 +18,15 @@ function componentFor(message) {
   if (!message.payload) return MessageBubble
   if (message.type === 'recommendation') return RecommendationCard
   if (message.type === 'quote') return QuoteCard
+  if (message.type === 'comparison') return CompareCard
   return MessageBubble
+}
+
+// Props/eventos extra que solo aplican a ciertas tarjetas (QuoteCard/CompareCard).
+function extraPropsFor(message) {
+  if (message.type === 'quote') return { onAdjust: () => applyAdjustments([]) }
+  if (message.type === 'comparison') return { busy: isAdjusting.value, onApply: applyAdjustments }
+  return {}
 }
 
 function scrollToBottom() {
@@ -48,6 +57,7 @@ onMounted(scrollToBottom)
         v-for="message in messages"
         :key="message.id"
         :message="message"
+        v-bind="extraPropsFor(message)"
       />
       <TypingIndicator v-if="isTyping" />
     </div>
