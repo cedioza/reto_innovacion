@@ -364,3 +364,73 @@ class TestFalsoPositivoEndToEnd:
 
         assert result is not None
         assert result.messages[-1].content == texto
+
+
+# ==============================================================================
+# Fase 2: reglas de dominio y "no entendí" ------------------------------------
+# ==============================================================================
+#
+# Cubre `.claude/analysis/plans/20260725-a5-guardrails-y-confirmaciones.plan.md`
+# (Fase 2): las reglas 6 (alcance/fuera de dominio) y 7 (no entendí) deben
+# viajar en `SYSTEM_PROMPT` -y por tanto en el `system_instruction` que recibe
+# el LLM en cada turno- con conceptos concretos, no como párrafo exacto (la
+# redacción final es libre siempre que cubra estos conceptos). Además, una
+# respuesta guionada de alcance (sin cifras) debe atravesar el guard de
+# precios intacta.
+
+
+class TestSystemPromptDomainRules:
+    """Regla 6 (alcance/fuera de dominio) y regla 7 (no entendí) en el prompt."""
+
+    def test_scope_rule_mentions_out_of_domain_topics_and_referral(self) -> None:
+        prompt = orchestrator.SYSTEM_PROMPT
+        assert "siniestros" in prompt.lower()
+        assert "líneas de atención" in prompt.lower()
+        assert "No improvises" in prompt
+
+    def test_misunderstanding_rule_asks_to_repeat_instead_of_assuming(self) -> None:
+        prompt = orchestrator.SYSTEM_PROMPT.lower()
+        assert "pide que te lo repita" in prompt
+        assert "nunca actúes sobre una suposición" in prompt
+
+
+class TestSystemInstructionCarriesDomainRules:
+    """El `system_instruction` capturado en la llamada al LLM trae ambas reglas."""
+
+    def test_system_instruction_of_a_turn_contains_scope_and_misunderstanding_rules(
+        self, monkeypatch
+    ) -> None:
+        sid = _new_session()
+        llm = _scripted_llm(
+            [GeminiReply(kind="text", text="¡Hola! Cuéntame de tu casa")]
+        )
+        monkeypatch.setattr(orchestrator, "generate_reply", llm)
+
+        result = orchestrator.respond(sid, "hola")
+        assert result is not None
+
+        system_instruction = llm.calls[0]["system_instruction"].lower()
+        assert "siniestros" in system_instruction
+        assert "líneas de atención" in system_instruction
+        assert "pide que te lo repita" in system_instruction
+        assert "nunca actúes sobre una suposición" in system_instruction
+
+
+class TestScriptedOutOfScopeClaim:
+    """Guion "¿cómo reporto un siniestro?" -> respuesta de alcance SIN cifras."""
+
+    def test_scope_reply_without_figures_passes_the_guard_intact(
+        self, monkeypatch
+    ) -> None:
+        sid = _new_session()
+        texto = (
+            "Eso lo atienden las líneas de atención de Colsubsidio; yo te "
+            "acompaño con tu seguro de hogar, ¿seguimos?"
+        )
+        llm = _scripted_llm([GeminiReply(kind="text", text=texto)])
+        monkeypatch.setattr(orchestrator, "generate_reply", llm)
+
+        result = orchestrator.respond(sid, "¿cómo reporto un siniestro?")
+
+        assert result is not None
+        assert result.messages[-1].content == texto
