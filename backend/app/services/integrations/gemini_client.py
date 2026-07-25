@@ -44,16 +44,31 @@ def model_message(*parts: dict) -> dict:
     return {"role": "model", "parts": list(parts)}
 
 
-def _extract_text(response_json: dict) -> str:
-    """Concatena los textos de `candidates[0].content.parts`, defensivo."""
+def _parts_from_response(response_json: dict) -> list:
+    """Extrae `candidates[0].content.parts`, defensivo en cada nivel."""
     candidates = response_json.get("candidates") or []
     if not candidates:
-        return ""
+        return []
     first_candidate = candidates[0] or {}
     content = first_candidate.get("content") or {}
-    parts = content.get("parts") or []
+    return content.get("parts") or []
+
+
+def _extract_text(parts: list) -> str:
+    """Concatena los textos de una lista de `parts`, defensivo."""
     texts = [part.get("text", "") for part in parts if isinstance(part, dict)]
     return "".join(texts)
+
+
+def _extract_function_call(parts: list) -> dict | None:
+    """Devuelve la primera `functionCall` encontrada en `parts`, si hay alguna."""
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        function_call = part.get("functionCall")
+        if function_call:
+            return function_call
+    return None
 
 
 def generate_reply(
@@ -76,6 +91,8 @@ def generate_reply(
     payload: dict = {"contents": contents}
     if system_instruction is not None:
         payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+    if tools is not None:
+        payload["tools"] = [{"functionDeclarations": tools}]
 
     headers = {"x-goog-api-key": settings.gemini_api_key}
 
@@ -89,8 +106,15 @@ def generate_reply(
             return GeminiReply(kind="error", text=FALLBACK_MESSAGE)
 
         if response.is_success:
-            text = _extract_text(response.json())
-            return GeminiReply(kind="text", text=text)
+            parts = _parts_from_response(response.json())
+            function_call = _extract_function_call(parts)
+            if function_call is not None:
+                return GeminiReply(
+                    kind="tool_call",
+                    tool_name=function_call.get("name", ""),
+                    tool_args=function_call.get("args") or {},
+                )
+            return GeminiReply(kind="text", text=_extract_text(parts))
 
         if response.status_code >= 500 and attempt < MAX_ATTEMPTS - 1:
             continue

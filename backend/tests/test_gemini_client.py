@@ -252,3 +252,133 @@ def test_generate_reply_without_api_key_makes_no_http_calls(monkeypatch):
     )
 
     assert reply.kind == "error"
+
+
+# --- generate_reply: function calling (Fase 2 del plan) ---
+
+_COTIZAR_DECLARATION = {
+    "name": "cotizar",
+    "description": "Cotiza un producto de seguros.",
+    "parameters": {
+        "type": "object",
+        "properties": {"producto": {"type": "string"}},
+    },
+}
+
+_TOOL_CALL_JSON = {
+    "candidates": [
+        {
+            "content": {
+                "parts": [
+                    {"functionCall": {"name": "cotizar", "args": {"producto": "hogar"}}}
+                ]
+            }
+        }
+    ]
+}
+
+
+def test_generate_reply_includes_tools_in_payload_when_given(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    captured: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=_SUCCESS_JSON)], calls, captured)
+
+    gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))],
+        tools=[_COTIZAR_DECLARATION],
+    )
+
+    assert len(captured) == 1
+    sent_payload = captured[0]["kwargs"]["json"]
+    assert sent_payload["tools"] == [{"functionDeclarations": [_COTIZAR_DECLARATION]}]
+
+
+def test_generate_reply_omits_tools_when_not_given(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    captured: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=_SUCCESS_JSON)], calls, captured)
+
+    gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))]
+    )
+
+    assert len(captured) == 1
+    sent_payload = captured[0]["kwargs"]["json"]
+    assert "tools" not in sent_payload
+
+
+def test_generate_reply_parses_function_call_as_tool_call(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=_TOOL_CALL_JSON)], calls)
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("cotiza un seguro de hogar"))],
+        tools=[_COTIZAR_DECLARATION],
+    )
+
+    assert reply.kind == "tool_call"
+    assert reply.tool_name == "cotizar"
+    assert reply.tool_args == {"producto": "hogar"}
+
+
+def test_generate_reply_function_call_wins_over_text_part(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    json_data = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {"text": "Voy a cotizar eso por ti."},
+                        {"functionCall": {"name": "cotizar", "args": {"producto": "hogar"}}},
+                    ]
+                }
+            }
+        ]
+    }
+    calls: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=json_data)], calls)
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("cotiza un seguro de hogar"))],
+        tools=[_COTIZAR_DECLARATION],
+    )
+
+    assert reply.kind == "tool_call"
+    assert reply.tool_name == "cotizar"
+
+
+def test_generate_reply_function_call_without_args_returns_empty_dict(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    json_data = {
+        "candidates": [
+            {"content": {"parts": [{"functionCall": {"name": "cotizar"}}]}}
+        ]
+    }
+    calls: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=json_data)], calls)
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("cotiza algo"))],
+        tools=[_COTIZAR_DECLARATION],
+    )
+
+    assert reply.kind == "tool_call"
+    assert reply.tool_name == "cotizar"
+    assert reply.tool_args == {}
+
+
+def test_generate_reply_with_tools_declared_but_text_response_returns_text(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=_SUCCESS_JSON)], calls)
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("hola"))],
+        tools=[_COTIZAR_DECLARATION],
+    )
+
+    assert reply.kind == "text"
+    assert reply.text == "¡Hola!"
