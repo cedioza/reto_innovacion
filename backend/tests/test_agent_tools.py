@@ -202,7 +202,7 @@ class TestToolDeclarationsPhase2:
         declarations = tool_declarations()
         names = [decl["name"] for decl in declarations]
 
-        assert len(declarations) == 3
+        assert len(declarations) >= 3
         assert len(names) == len(set(names))
         for decl in declarations:
             assert "name" in decl
@@ -308,3 +308,232 @@ class TestCotizar:
 
         assert isinstance(result, dict)
         assert "error" in result
+
+
+# --- Fase 3: ajustar_comparar + cerrar_venta ---
+
+
+def _build_full_funnel_ctx(session_id: str = "sesion-test") -> ToolContext:
+    """Ejecuta las tools reales, en orden, sobre un mismo ToolContext.
+
+    perfilar_cliente (perfil declarado favorable, equivalente a
+    FAVORABLE_PROFILE) -> recomendar_seguro -> cotizar. Deja el ctx en el
+    mismo estado que tendría al final del funnel de cotización, listo para
+    ajustar_comparar / cerrar_venta.
+    """
+    ctx = ToolContext(session_id=session_id)
+    execute_tool(
+        "perfilar_cliente",
+        {
+            "property_type": "house",
+            "zone": "urban",
+            "stratum": 3,
+            "age_range": "26-40",
+        },
+        ctx,
+    )
+    execute_tool("recomendar_seguro", {}, ctx)
+    execute_tool("cotizar", {}, ctx)
+    return ctx
+
+
+class TestToolDeclarationsPhase3:
+    def test_includes_ajustar_comparar_and_cerrar_venta(self) -> None:
+        declarations = tool_declarations()
+        names = [decl["name"] for decl in declarations]
+
+        assert "ajustar_comparar" in names
+        assert "cerrar_venta" in names
+
+    def test_has_five_unique_declarations_with_required_keys(self) -> None:
+        declarations = tool_declarations()
+        names = [decl["name"] for decl in declarations]
+
+        assert len(declarations) == 5
+        assert len(names) == len(set(names))
+        for decl in declarations:
+            assert "name" in decl
+            assert "description" in decl
+            assert "parameters" in decl
+            assert isinstance(decl["parameters"], dict)
+            assert decl["parameters"].get("type") == "object"
+
+
+class TestAjustarComparar:
+    def test_matches_quote_engine_and_updates_ctx(self) -> None:
+        ctx = _build_full_funnel_ctx()
+        actual_quote_before = dict(ctx.quote)
+
+        product = CatalogService().get_product("hogar-estandar")
+        assert product is not None
+        assert len(product.adjustments) >= 1
+        adjustment_code = product.adjustments[0].code
+
+        result = execute_tool(
+            "ajustar_comparar", {"adjustments": [adjustment_code]}, ctx
+        )
+
+        assert set(result.keys()) >= {
+            "actual",
+            "propuesta",
+            "diferencia_mensual",
+            "ajustes_disponibles",
+        }
+
+        assert (
+            result["actual"]["monthly_premium"]
+            == actual_quote_before["monthly_premium"]
+        )
+
+        expected = QuoteService().calculate_quote(
+            FAVORABLE_PROFILE, [adjustment_code]
+        )
+        assert (
+            result["propuesta"]["monthly_premium"]
+            == expected["monthly_premium"]
+        )
+
+        expected_diff = round(
+            result["propuesta"]["monthly_premium"]
+            - result["actual"]["monthly_premium"],
+            2,
+        )
+        assert result["diferencia_mensual"] == expected_diff
+
+        codes_disponibles = [
+            item.get("code") for item in result["ajustes_disponibles"]
+        ]
+        assert adjustment_code in codes_disponibles
+        for item in result["ajustes_disponibles"]:
+            assert set(item.keys()) >= {"code", "name", "description"}
+
+        assert ctx.quote is not None
+        assert (
+            ctx.quote["monthly_premium"] == result["propuesta"]["monthly_premium"]
+        )
+
+    def test_result_is_json_safe(self) -> None:
+        ctx = _build_full_funnel_ctx()
+        product = CatalogService().get_product("hogar-estandar")
+        assert product is not None
+        adjustment_code = product.adjustments[0].code
+
+        result = execute_tool(
+            "ajustar_comparar", {"adjustments": [adjustment_code]}, ctx
+        )
+
+        json.dumps(result)
+
+
+class TestAjustarCompararSinCotizacion:
+    def test_without_prior_quote_returns_controlled_error(self) -> None:
+        ctx = ToolContext(session_id="sesion-test")
+        ctx.profile = FAVORABLE_PROFILE.model_copy()
+        assert ctx.quote is None
+
+        result = execute_tool("ajustar_comparar", {"adjustments": []}, ctx)
+
+        assert isinstance(result, dict)
+        assert "error" in result
+
+
+class TestCerrarVenta:
+    def test_consent_true_reaches_ready_for_payment_with_intact_price(
+        self,
+    ) -> None:
+        ctx = _build_full_funnel_ctx()
+        premium_before_close = ctx.quote["monthly_premium"]
+
+        result = execute_tool(
+            "cerrar_venta", {"consentimiento": True}, ctx
+        )
+
+        assert result["state"] == "ready_for_payment"
+        assert result.get("consent_timestamp")
+        assert result["session_id"] == "sesion-test"
+        assert result.get("product_id")
+        assert result["quote"]["monthly_premium"] == premium_before_close
+
+    def test_result_is_json_safe(self) -> None:
+        ctx = _build_full_funnel_ctx()
+
+        result = execute_tool(
+            "cerrar_venta", {"consentimiento": True}, ctx
+        )
+
+        json.dumps(result)
+
+
+class TestCerrarVentaConsentimientoFalso:
+    def test_consent_false_returns_controlled_error(self) -> None:
+        ctx = _build_full_funnel_ctx()
+
+        result = execute_tool(
+            "cerrar_venta", {"consentimiento": False}, ctx
+        )
+
+        assert isinstance(result, dict)
+        assert "error" in result
+
+
+class TestCerrarVentaSinCotizacionPrevia:
+    def test_missing_quote_returns_controlled_error_mentioning_quote(
+        self,
+    ) -> None:
+        ctx = ToolContext(session_id="sesion-test")
+        ctx.profile = FAVORABLE_PROFILE.model_copy()
+        assert ctx.quote is None
+
+        result = execute_tool(
+            "cerrar_venta", {"consentimiento": True}, ctx
+        )
+
+        assert isinstance(result, dict)
+        assert "error" in result
+        text = (
+            f"{result.get('error', '')} {result.get('detail', '')}"
+        ).lower()
+        assert "cotiz" in text
+
+
+class TestFunnelEndToEndSinLLM:
+    """Mini-e2e del contrato de tools sin LLM, sobre un mismo ToolContext."""
+
+    def test_full_funnel_via_execute_tool_reaches_ready_for_payment(
+        self,
+    ) -> None:
+        ctx = ToolContext(session_id="sesion-test")
+
+        perfilar_result = execute_tool(
+            "perfilar_cliente",
+            {
+                "property_type": "house",
+                "zone": "urban",
+                "stratum": 3,
+                "age_range": "26-40",
+            },
+            ctx,
+        )
+        recomendar_result = execute_tool("recomendar_seguro", {}, ctx)
+        cotizar_result = execute_tool("cotizar", {}, ctx)
+
+        product = CatalogService().get_product("hogar-estandar")
+        assert product is not None
+        adjustment_code = product.adjustments[0].code
+        ajustar_result = execute_tool(
+            "ajustar_comparar", {"adjustments": [adjustment_code]}, ctx
+        )
+        cerrar_result = execute_tool(
+            "cerrar_venta", {"consentimiento": True}, ctx
+        )
+
+        for result in (
+            perfilar_result,
+            recomendar_result,
+            cotizar_result,
+            ajustar_result,
+            cerrar_result,
+        ):
+            assert "error" not in result
+
+        assert cerrar_result["state"] == "ready_for_payment"

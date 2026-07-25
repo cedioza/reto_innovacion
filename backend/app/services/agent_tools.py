@@ -34,8 +34,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from app.schemas.conversation import ProfileData
+from app.schemas.conversation import ProfileData, QuoteDetail, Recommendation
 from app.services.affiliate import AffiliateService
+from app.services.catalog import CatalogService
+from app.services.consent import ConsentService
 from app.services.propensity import PropensityService
 from app.services.quote import QuoteService
 
@@ -223,6 +225,150 @@ def _cotizar(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     return {**result, "product_id": "hogar-estandar"}
 
 
+# -- ajustar_comparar --------------------------------------------------------
+
+_AJUSTAR_COMPARAR_DECLARATION: dict[str, Any] = {
+    "name": "ajustar_comparar",
+    "description": (
+        "Recalcula la cotización aplicando otros ajustes del catálogo y la "
+        "compara contra la cotización actual del cliente. Úsala cuando el "
+        "cliente quiera ajustar coberturas, comparar opciones o resolver "
+        "dudas sobre el precio antes de decidir."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "adjustments": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Códigos de ajustes del catálogo a aplicar en la nueva "
+                    "propuesta."
+                ),
+            },
+        },
+    },
+}
+
+
+def _sin_cotizacion_error() -> dict[str, Any]:
+    return {
+        "error": "falta la cotización",
+        "detail": "falta la cotización — llama cotizar primero",
+    }
+
+
+def _sin_recomendacion_error() -> dict[str, Any]:
+    return {
+        "error": "falta la recomendación",
+        "detail": "falta la recomendación — llama recomendar_seguro primero",
+    }
+
+
+def _ajustar_comparar(
+    args: dict[str, Any], ctx: ToolContext
+) -> dict[str, Any]:
+    if ctx.profile is None:
+        return _sin_perfil_error()
+    if ctx.quote is None:
+        return _sin_cotizacion_error()
+
+    actual = ctx.quote
+    adjustments = args.get("adjustments") or []
+    propuesta = QuoteService().calculate_quote(ctx.profile, adjustments)
+
+    diferencia_mensual = round(
+        propuesta["monthly_premium"] - actual["monthly_premium"], 2
+    )
+
+    product = CatalogService().get_product("hogar-estandar")
+    ajustes_disponibles = [
+        {"code": adj.code, "name": adj.name, "description": adj.description}
+        for adj in (product.adjustments if product else [])
+    ]
+
+    ctx.quote = propuesta
+
+    return {
+        "actual": actual,
+        "propuesta": propuesta,
+        "diferencia_mensual": diferencia_mensual,
+        "ajustes_disponibles": ajustes_disponibles,
+    }
+
+
+# -- cerrar_venta -------------------------------------------------------------
+
+_CERRAR_VENTA_DECLARATION: dict[str, Any] = {
+    "name": "cerrar_venta",
+    "description": (
+        "Cierra la venta con el consentimiento explícito del cliente y deja "
+        "la solicitud lista para pago. Requiere que el perfil, la "
+        "recomendación y la cotización ya se hayan calculado."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "consentimiento": {
+                "type": "boolean",
+                "description": (
+                    "Consentimiento explícito del cliente para cerrar la "
+                    "venta. Debe ser true."
+                ),
+            },
+        },
+        "required": ["consentimiento"],
+    },
+}
+
+
+def _cerrar_venta(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    if args.get("consentimiento") is not True:
+        return {
+            "error": "consentimiento requerido",
+            "detail": (
+                "el consentimiento explícito del cliente es obligatorio "
+                "para cerrar la venta"
+            ),
+        }
+
+    if ctx.profile is None:
+        return _sin_perfil_error()
+    if ctx.quote is None:
+        return _sin_cotizacion_error()
+    if ctx.recommendation is None:
+        return _sin_recomendacion_error()
+
+    product_id = ctx.recommendation.get("product_id", "hogar-estandar")
+    product = CatalogService().get_product(product_id)
+    product_name = product.name if product else "Hogar Estándar"
+
+    recommendation = Recommendation(
+        product_id=product_id,
+        product_name=product_name,
+        reasons=ctx.recommendation.get("reasons", []),
+    )
+
+    quote = QuoteDetail(
+        currency=ctx.quote.get("currency", "COP"),
+        base_amount=ctx.quote["base_amount"],
+        adjustments=ctx.quote.get("adjustments", []),
+        monthly_premium=ctx.quote["monthly_premium"],
+        coverage_details=ctx.quote.get("coverage_details", []),
+        exclusions=ctx.quote.get("exclusions", []),
+    )
+
+    application = ConsentService().capture(
+        session_id=ctx.session_id,
+        product_id=product_id,
+        profile=ctx.profile,
+        recommendation=recommendation,
+        quote=quote,
+    )
+
+    return application.model_dump(mode="json")
+
+
 # -- registro --------------------------------------------------------------
 
 AGENT_TOOLS: dict[str, AgentTool] = {
@@ -237,6 +383,14 @@ AGENT_TOOLS: dict[str, AgentTool] = {
     "cotizar": AgentTool(
         declaration=_COTIZAR_DECLARATION,
         handler=_cotizar,
+    ),
+    "ajustar_comparar": AgentTool(
+        declaration=_AJUSTAR_COMPARAR_DECLARATION,
+        handler=_ajustar_comparar,
+    ),
+    "cerrar_venta": AgentTool(
+        declaration=_CERRAR_VENTA_DECLARATION,
+        handler=_cerrar_venta,
     ),
 }
 
