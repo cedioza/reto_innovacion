@@ -7,6 +7,7 @@ Manages the state machine and orchestrates the end-to-end flow:
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -26,6 +27,8 @@ from app.services.affiliate import AffiliateService
 from app.services.catalog import CatalogService
 from app.services.consent import ConsentService
 from app.repositories.conversations import ConversationRepository
+
+_EMAIL_RE = re.compile(r"^\S+@\S+\.\S+$")
 
 
 class ConversationService:
@@ -148,6 +151,23 @@ class ConversationService:
                 ),
             )
         )
+        session.messages.append(
+            Message(
+                role="assistant",
+                type="consent",
+                content=(
+                    "📝 Consentimiento: confirma para dejar tu solicitud lista"
+                ),
+                payload={
+                    "product_id": session.recommendation.product_id,
+                    "product_name": session.recommendation.product_name,
+                    "monthly_premium": session.quote.monthly_premium,
+                    "annual_premium": session.quote.annual_premium,
+                    "currency": session.quote.currency,
+                    "coverage_details": session.quote.coverage_details,
+                },
+            )
+        )
         session.next_action = "Dá tu consentimiento para generar la solicitud"
         self._repo.save(session.session_id, session)
         return session
@@ -173,6 +193,9 @@ class ConversationService:
         if not session.profile or not session.recommendation or not session.quote:
             raise ValueError("Missing profile, recommendation, or quote")
 
+        if email and not _EMAIL_RE.match(email):
+            raise ValueError("Email inválido")
+
         application = self._consent.capture(
             session_id=session_id,
             product_id=session.recommendation.product_id,
@@ -183,6 +206,40 @@ class ConversationService:
         )
 
         session.state = ConversationState.READY_FOR_PAYMENT
+
+        if email:
+            success_text = (
+                "¡Listo! Tu solicitud va en camino: revisa tu correo para "
+                f"finalizar con {application.insurer_name} 🎉"
+            )
+            session.next_action = "Revisa tu correo para finalizar con la aseguradora"
+        else:
+            success_text = (
+                "¡Listo! Tu solicitud quedó registrada y lista para pago 🎉"
+            )
+            session.next_action = (
+                "Tu solicitud quedó lista para pago con la aseguradora"
+            )
+
+        session.messages.append(
+            Message(role="assistant", content=success_text)
+        )
+        session.messages.append(
+            Message(
+                role="assistant",
+                type="application",
+                content="🎉 Solicitud lista — pendiente de pago",
+                payload={
+                    "product_name": session.recommendation.product_name,
+                    "monthly_premium": session.quote.monthly_premium,
+                    "currency": session.quote.currency,
+                    "insurer_name": application.insurer_name,
+                    "email": application.email,
+                    "consent_timestamp": application.consent_timestamp,
+                },
+            )
+        )
+
         self._repo.save(session.session_id, session)
         return application
 
