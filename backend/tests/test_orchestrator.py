@@ -68,6 +68,16 @@ def _find_function_response(contents, name: str) -> dict | None:
     return None
 
 
+def _find_function_call_part(contents, name: str) -> dict | None:
+    """Busca en `contents` una part `functionCall` con el `name` dado."""
+    for message in contents:
+        for part in message.get("parts", []):
+            function_call = part.get("functionCall")
+            if function_call and function_call.get("name") == name:
+                return part
+    return None
+
+
 FAVORABLE_ARGS = {
     "property_type": "house",
     "zone": "urban",
@@ -136,6 +146,32 @@ class TestRespondSingleTool:
             second_call_contents, "perfilar_cliente"
         )
         assert function_response is not None
+
+    def test_tool_call_replays_thought_signature_in_next_call_history(
+        self, monkeypatch
+    ) -> None:
+        sid = _new_session()
+        llm = _scripted_llm(
+            [
+                GeminiReply(
+                    kind="tool_call",
+                    tool_name="perfilar_cliente",
+                    tool_args=dict(FAVORABLE_ARGS),
+                    thought_signature="sig-abc",
+                ),
+                GeminiReply(kind="text", text="Ya te tengo perfilado"),
+            ]
+        )
+        monkeypatch.setattr(orchestrator, "generate_reply", llm)
+
+        orchestrator.respond(sid, "vivo en casa propia, estrato 3")
+
+        second_call_contents = llm.calls[1]["contents"]
+        function_call_part = _find_function_call_part(
+            second_call_contents, "perfilar_cliente"
+        )
+        assert function_call_part is not None
+        assert function_call_part["thoughtSignature"] == "sig-abc"
 
 
 class TestRespondChainToQuote:

@@ -28,6 +28,7 @@ class GeminiReply:
     text: str = ""
     tool_name: str = ""
     tool_args: dict = field(default_factory=dict)
+    thought_signature: str = ""
 
 
 def text_part(text: str) -> dict:
@@ -45,9 +46,17 @@ def audio_part(data: bytes, mime_type: str = "audio/ogg") -> dict:
     }
 
 
-def function_call_part(name: str, args: dict) -> dict:
-    """Construye una `part` de tipo `functionCall` (petición de Gemini a usar una herramienta)."""
-    return {"functionCall": {"name": name, "args": args}}
+def function_call_part(name: str, args: dict, thought_signature: str = "") -> dict:
+    """Construye una `part` de tipo `functionCall` (petición de Gemini a usar una herramienta).
+
+    Si `thought_signature` no está vacío, se incluye como `thoughtSignature`:
+    Gemini 3 exige reenviar la firma de pensamiento original al reconstruir el
+    historial, o rechaza la siguiente llamada con 400 INVALID_ARGUMENT.
+    """
+    part: dict = {"functionCall": {"name": name, "args": args}}
+    if thought_signature:
+        part["thoughtSignature"] = thought_signature
+    return part
 
 
 def function_response_part(name: str, response: dict) -> dict:
@@ -81,14 +90,13 @@ def _extract_text(parts: list) -> str:
     return "".join(texts)
 
 
-def _extract_function_call(parts: list) -> dict | None:
-    """Devuelve la primera `functionCall` encontrada en `parts`, si hay alguna."""
+def _extract_function_call_part(parts: list) -> dict | None:
+    """Devuelve la primera `part` con `functionCall` encontrada en `parts`, si hay alguna."""
     for part in parts:
         if not isinstance(part, dict):
             continue
-        function_call = part.get("functionCall")
-        if function_call:
-            return function_call
+        if part.get("functionCall"):
+            return part
     return None
 
 
@@ -128,12 +136,16 @@ def generate_reply(
 
         if response.is_success:
             parts = _parts_from_response(response.json())
-            function_call = _extract_function_call(parts)
-            if function_call is not None:
+            function_call_part_found = _extract_function_call_part(parts)
+            if function_call_part_found is not None:
+                function_call = function_call_part_found["functionCall"]
                 return GeminiReply(
                     kind="tool_call",
                     tool_name=function_call.get("name", ""),
                     tool_args=function_call.get("args") or {},
+                    thought_signature=function_call_part_found.get(
+                        "thoughtSignature", ""
+                    ),
                 )
             return GeminiReply(kind="text", text=_extract_text(parts))
 

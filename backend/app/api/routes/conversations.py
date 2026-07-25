@@ -11,8 +11,10 @@ from app.schemas.conversation import (
     ConsentedApplication,
     ConversationCreate,
     ConversationResponse,
+    MessageRequest,
     ProfileData,
 )
+from app.services import orchestrator
 from app.services.conversation import conversation_service
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["conversations"])
@@ -54,3 +56,11 @@ async def submit_consent(session_id: str, consent: ConsentRequest):
         return _service.submit_consent(session_id, consent.consent_given)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/{session_id}/message", response_model=ConversationResponse)
+async def post_message(session_id: str, body: MessageRequest):
+    session = orchestrator.respond(session_id, body.content)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session

@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ConversationState(str, Enum):
@@ -57,6 +57,10 @@ class ConsentedApplication(BaseModel):
 class ConversationCreate(BaseModel):
     document_number: Optional[str] = None
     message: Optional[Message] = None
+
+
+class MessageRequest(BaseModel):
+    content: str = Field(min_length=1)
 
 
 class ConversationResponse(BaseModel):

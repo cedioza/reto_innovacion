@@ -372,6 +372,50 @@ def test_generate_reply_function_call_without_args_returns_empty_dict(monkeypatc
     assert reply.tool_args == {}
 
 
+def test_generate_reply_parses_function_call_with_thought_signature(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    json_data = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "functionCall": {
+                                "name": "cotizar",
+                                "args": {"producto": "hogar"},
+                            },
+                            "thoughtSignature": "firma-xyz",
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    calls: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=json_data)], calls)
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("cotiza un seguro de hogar"))],
+        tools=[_COTIZAR_DECLARATION],
+    )
+
+    assert reply.kind == "tool_call"
+    assert reply.thought_signature == "firma-xyz"
+
+
+def test_generate_reply_function_call_without_thought_signature_defaults_empty(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    calls: list = []
+    _patch_client(monkeypatch, [_FakeResponse(200, json_data=_TOOL_CALL_JSON)], calls)
+
+    reply = gemini_client.generate_reply(
+        [gemini_client.user_message(gemini_client.text_part("cotiza un seguro de hogar"))],
+        tools=[_COTIZAR_DECLARATION],
+    )
+
+    assert reply.thought_signature == ""
+
+
 def test_generate_reply_with_tools_declared_but_text_response_returns_text(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "test-key")
     calls: list = []
@@ -448,6 +492,21 @@ def test_function_call_part_builds_function_call_dict():
     assert part == {
         "functionCall": {"name": "cotizar", "args": {"producto": "hogar"}}
     }
+
+
+def test_function_call_part_includes_thought_signature_when_given():
+    part = gemini_client.function_call_part("x", {}, "firma123")
+
+    assert part == {
+        "functionCall": {"name": "x", "args": {}},
+        "thoughtSignature": "firma123",
+    }
+
+
+def test_function_call_part_omits_thought_signature_when_empty():
+    part = gemini_client.function_call_part("x", {}, "")
+
+    assert "thoughtSignature" not in part
 
 
 def test_function_response_part_builds_function_response_dict():

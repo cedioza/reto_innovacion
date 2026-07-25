@@ -196,7 +196,11 @@ def respond(session_id: str, content: str) -> ConversationResponse | None:
             if reply.tool_name == "cerrar_venta" and "error" not in resultado:
                 cerrar_venta_result = resultado
             contents.append(
-                model_message(function_call_part(reply.tool_name, reply.tool_args))
+                model_message(
+                    function_call_part(
+                        reply.tool_name, reply.tool_args, reply.thought_signature
+                    )
+                )
             )
             contents.append(
                 user_message(function_response_part(reply.tool_name, resultado))
