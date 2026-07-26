@@ -6,8 +6,9 @@ subyacente).
 """
 
 from sqlalchemy.pool import StaticPool
-from sqlmodel import create_engine
+from sqlmodel import Session, create_engine
 
+from app.models.application import ApplicationRecord
 from app.repositories.applications import ApplicationRepository
 from app.repositories.db import init_db
 from app.schemas.conversation import (
@@ -95,3 +96,33 @@ class TestApplicationRepository:
         found_by_token = second_repo.find_by_token("tok-persist")
         assert found_by_token is not None
         assert found_by_token.session_id == "app-persist"
+
+    # -- list_all (plan G4, Fase 2) -------------------------------------------
+
+    def test_list_all_returns_all_applications(self) -> None:
+        self.repo.save("a", "h1", self._app("a"))
+        self.repo.save("b", "h2", self._app("b"))
+
+        items = self.repo.list_all()
+        assert isinstance(items, list)
+        assert all(isinstance(app, ConsentedApplication) for app in items)
+        assert {app.session_id for app in items} == {"a", "b"}
+
+    def test_list_all_skips_corrupt_rows(self) -> None:
+        self.repo.save("good-1", "h1", self._app("good-1"))
+
+        with Session(self.engine) as db_session:
+            corrupt = ApplicationRecord(
+                session_id="corrupt-1",
+                evidence_hash="hx",
+                handoff_token=None,
+                consent_timestamp="2026-07-24T00:00:00",
+                data={"garbage": True},
+            )
+            db_session.add(corrupt)
+            db_session.commit()
+
+        items = self.repo.list_all()
+        session_ids = [app.session_id for app in items]
+        assert "good-1" in session_ids
+        assert "corrupt-1" not in session_ids

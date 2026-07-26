@@ -19,6 +19,7 @@ importar este módulo o instanciar el repositorio, p. ej. en tests.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import Engine, func
@@ -27,6 +28,8 @@ from sqlmodel import Session, select
 from app.models.conversation import ConversationRecord
 from app.repositories import db
 from app.schemas.conversation import ConversationResponse
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationRepository:
@@ -77,3 +80,42 @@ class ConversationRepository:
         with Session(self._resolve_engine()) as db_session:
             statement = select(func.count()).select_from(ConversationRecord)
             return db_session.exec(statement).one()
+
+    def list_all(self) -> list[dict]:
+        """Devuelve todas las conversaciones, más recientes primero.
+
+        Escaneo completo de la tabla `conversaciones` (plan G4, Fase 2: vista
+        de clientes/búsqueda): aceptable a escala hackathon, no es un patrón
+        de producción (falta paginación/índices para volúmenes grandes).
+
+        Cada item es un dict `{"session", "canal", "created_at",
+        "updated_at"}`, con `session` ya deserializada a `ConversationResponse`.
+        Una fila cuyo `data` no valide como `ConversationResponse` (dato
+        corrupto o de un shape viejo) se salta con un warning, en vez de
+        romper el listado completo.
+        """
+        statement = select(ConversationRecord).order_by(
+            ConversationRecord.updated_at.desc()
+        )
+        with Session(self._resolve_engine()) as db_session:
+            records = db_session.exec(statement).all()
+
+        items: list[dict] = []
+        for record in records:
+            try:
+                session = ConversationResponse.model_validate(record.data)
+            except Exception:  # noqa: BLE001 - dato corrupto, se salta y se loguea
+                logger.warning(
+                    "fila corrupta en conversaciones, se omite session_id=%s",
+                    record.session_id,
+                )
+                continue
+            items.append(
+                {
+                    "session": session,
+                    "canal": record.canal,
+                    "created_at": record.created_at,
+                    "updated_at": record.updated_at,
+                }
+            )
+        return items

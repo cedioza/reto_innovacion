@@ -57,3 +57,16 @@ class EnrichedProfileRepository:
         with Session(self._resolve_engine()) as db_session:
             records = db_session.exec(statement).all()
         return {record.campo: record.valor for record in records}
+
+    def list_all(self) -> list[EnrichedFieldRecord]:
+        """Devuelve todas las filas EAV, en orden de `id` ascendente.
+
+        Mismo criterio que `fields_for_session`/`fields_for_serie`: quien
+        consuma la lista completa resuelve "última escritura gana" si lo
+        necesita (aquí no se colapsa por campo, se devuelven todas las filas).
+        """
+        statement = select(EnrichedFieldRecord).order_by(
+            EnrichedFieldRecord.id.asc()
+        )
+        with Session(self._resolve_engine()) as db_session:
+            return db_session.exec(statement).all()

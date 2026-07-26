@@ -18,6 +18,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import create_engine
 
 from app.repositories.db import init_db
+from app.repositories.enriched_profile import EnrichedProfileRepository
 from app.services.enrichment import EnrichmentService
 
 
@@ -105,3 +106,56 @@ class TestEnrichmentValidation:
         assert self.service.record("sess-1", None, "hijos", "2") == "2"
         assert self.service.record("sess-1", None, "hijos", " 3 ") == "3"
         assert self.service.fields_for("sess-1")["hijos"] == "3"
+
+
+class TestEnrichedProfileRepositoryListAll:
+    """`list_all` (plan G4, Fase 2): todas las filas EAV, orden de `id` asc."""
+
+    def setup_method(self) -> None:
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        init_db(self.engine)
+        self.repo = EnrichedProfileRepository(engine=self.engine)
+
+    def test_list_all_returns_rows_in_id_ascending_order(self) -> None:
+        self.repo.add("sess-1", None, "hijos", "2")
+        self.repo.add("sess-1", "S001", "vehiculo", "si")
+        self.repo.add("sess-2", None, "mascota", "perro")
+
+        rows = self.repo.list_all()
+
+        assert [r.campo for r in rows] == ["hijos", "vehiculo", "mascota"]
+        assert [r.id for r in rows] == sorted(r.id for r in rows)
+        assert rows[0].session_id == "sess-1"
+        assert rows[0].serie is None
+        assert rows[1].serie == "S001"
+        assert rows[2].session_id == "sess-2"
+
+    def test_list_all_empty_returns_empty_list(self) -> None:
+        assert self.repo.list_all() == []
+
+
+class TestEnrichmentServiceAllFields:
+    """`EnrichmentService.all_fields` (plan G4, Fase 2): delega en el repo."""
+
+    def setup_method(self) -> None:
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        init_db(self.engine)
+        self.service = EnrichmentService(engine=self.engine)
+
+    def test_all_fields_returns_all_repository_rows(self) -> None:
+        self.service.record("sess-1", None, "hijos", "2")
+        self.service.record("sess-2", "S001", "vehiculo", "si")
+
+        rows = self.service.all_fields()
+
+        assert len(rows) == 2
+        assert {r.session_id for r in rows} == {"sess-1", "sess-2"}
+        assert {r.campo for r in rows} == {"hijos", "vehiculo"}

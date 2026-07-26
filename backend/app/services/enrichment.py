@@ -12,6 +12,7 @@ from typing import Callable
 
 from sqlalchemy import Engine
 
+from app.models.enriched_field import EnrichedFieldRecord
 from app.repositories.enriched_profile import EnrichedProfileRepository
 
 
@@ -74,3 +75,10 @@ class EnrichmentService:
             combinado.update(self._repo.fields_for_serie(serie))
         combinado.update(self._repo.fields_for_session(session_id))
         return combinado
+
+    def all_fields(self) -> list[EnrichedFieldRecord]:
+        """Lista todas las filas EAV (plan G4, Fase 2: vista de clientes).
+
+        Delegación directa al `EnrichedProfileRepository.list_all()` subyacente.
+        """
+        return self._repo.list_all()

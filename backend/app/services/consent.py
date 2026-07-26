@@ -111,6 +111,13 @@ class ConsentService:
     ) -> ConsentedApplication | None:
         return self._repo.find_by_token(token)
 
+    def list_applications(self) -> list[ConsentedApplication]:
+        """Lista todas las solicitudes (plan G4, Fase 2: vista de clientes).
+
+        Delegación directa al `ApplicationRepository.list_all()` subyacente.
+        """
+        return self._repo.list_all()
+
     def finalize_by_token(self, token: str) -> ConsentedApplication:
         """Marca la solicitud como `finalizada_demo` (idempotente).
 

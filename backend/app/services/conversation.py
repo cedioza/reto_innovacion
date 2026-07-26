@@ -84,6 +84,13 @@ class ConversationService:
     def get(self, session_id: str) -> ConversationResponse | None:
         return self._repo.find(session_id)
 
+    def list_sessions(self) -> list[dict]:
+        """Lista todas las sesiones (plan G4, Fase 2: vista de clientes).
+
+        Delegación directa al `ConversationRepository.list_all()` subyacente.
+        """
+        return self._repo.list_all()
+
     # -- profile update ------------------------------------------------------
 
     def update_profile(

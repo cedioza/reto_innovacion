@@ -123,3 +123,16 @@ class TestConversationService:
         body = ConversationCreate(message=Message(role="user", content="Hola"))
         session = self.service.create(body)
         assert session.serie is None
+
+    # -- list_sessions (plan G4, Fase 2) --------------------------------------
+    #
+    # Delegación directa al `ConversationRepository.list_all()` subyacente.
+
+    def test_list_sessions_delegates_to_repository(self) -> None:
+        body = ConversationCreate(message=Message(role="user", content="Hola"))
+        session = self.service.create(body)
+
+        sessions = self.service.list_sessions()
+
+        session_ids = [item["session"].session_id for item in sessions]
+        assert session.session_id in session_ids
