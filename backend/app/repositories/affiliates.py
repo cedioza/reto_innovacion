@@ -193,6 +193,48 @@ class AffiliateRepository:
         self._log_csv_fallback()
         return len(self._load()[0])
 
+    def count_by_filters(self, filters: dict) -> int:
+        """Count `afiliados` rows matching `filters` (cohort queries).
+
+        Each filter is a `column == valor` (scalar) or `column.in_(valor)`
+        (list/tuple/set) clause, ANDed together. No BD/tabla/error -> 0,
+        same benign fallback as the rest of the DB path.
+        """
+        try:
+            with Session(self._resolve_engine()) as session:
+                statement = select(func.count()).select_from(AffiliateRecord)
+                statement = self._apply_filters(statement, filters)
+                return session.exec(statement).one()
+        except Exception:  # noqa: BLE001 - never let a bad DB raise
+            return 0
+
+    def sample_by_filters(
+        self, filters: dict, limit: int = 5
+    ) -> list[AffiliateRecord]:
+        """Sample up to `limit` `afiliados` rows matching `filters`.
+
+        Same filter semantics as `count_by_filters`. No BD/tabla/error -> [].
+        """
+        try:
+            with Session(self._resolve_engine()) as session:
+                statement = select(AffiliateRecord)
+                statement = self._apply_filters(statement, filters)
+                statement = statement.limit(limit)
+                return list(session.exec(statement).all())
+        except Exception:  # noqa: BLE001 - never let a bad DB raise
+            return []
+
+    @staticmethod
+    def _apply_filters(statement, filters: dict):
+        """AND together one WHERE clause per filter (list -> IN, scalar -> ==)."""
+        for field, value in filters.items():
+            column = getattr(AffiliateRecord, field)
+            if isinstance(value, (list, tuple, set)):
+                statement = statement.where(column.in_(value))
+            else:
+                statement = statement.where(column == value)
+        return statement
+
     def load_from_csv(self, path: str) -> int:
         """Load affiliate profiles from a CSV file.
 

@@ -10,6 +10,7 @@ from app.api.routes.conversations import router as conversations_router
 from app.api.routes.handoff import router as handoff_router
 from app.api.routes.health import router as health_router
 from app.api.routes.integrations import router as integrations_router
+from app.api.routes.panel import router as panel_router
 from app.api.routes.webhooks import router as webhooks_router
 from app.core.config import settings
 from app.repositories.db import init_db
@@ -38,4 +39,5 @@ api_v1.include_router(integrations_router)
 api_v1.include_router(conversations_router)
 api_v1.include_router(webhooks_router)
 api_v1.include_router(handoff_router)
+api_v1.include_router(panel_router)
 app.include_router(api_v1)
