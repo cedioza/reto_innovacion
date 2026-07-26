@@ -7,6 +7,7 @@ Two lookup paths:
 
 from app.repositories.affiliates import AffiliateRepository
 from app.models.affiliate import AffiliateProfile
+from app.models.affiliate_record import AffiliateRecord
 from app.schemas.conversation import ProfileData
 
 
@@ -17,6 +18,14 @@ class AffiliateService:
     def lookup(self, document_number: str) -> AffiliateProfile | None:
         """Look up an affiliate by their anonymized document number."""
         return self._repo.find_by_document(document_number)
+
+    def count_cohort(self, filters: dict) -> int:
+        """Count affiliates matching `filters` (thin delegation to the repo)."""
+        return self._repo.count_by_filters(filters)
+
+    def sample_cohort(self, filters: dict, limit: int = 5) -> list[AffiliateRecord]:
+        """Sample up to `limit` affiliates matching `filters`."""
+        return self._repo.sample_by_filters(filters, limit=limit)
 
     def build_declared_profile(self, data: ProfileData) -> AffiliateProfile:
         """Build a fallback profile from declared (conversation) data."""

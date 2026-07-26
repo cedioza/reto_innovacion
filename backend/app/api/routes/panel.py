@@ -1,0 +1,29 @@
+"""Panel API router (disparador proactivo).
+
+Thin layer: delegates to ProactiveService and returns the response
+validated by CohortsResponse. No business logic here.
+"""
+
+from fastapi import APIRouter, HTTPException
+
+from app.schemas.panel import CohortsResponse, TriggerRequest, TriggerResponse
+from app.services.proactive import ProactiveService
+
+router = APIRouter(prefix="/panel", tags=["panel"])
+
+
+@router.get("/cohortes", response_model=CohortsResponse)
+async def get_cohortes():
+    return ProactiveService().list_cohorts()
+
+
+@router.post(
+    "/cohortes/{cohorte_id}/disparar",
+    response_model=TriggerResponse,
+    status_code=201,
+)
+async def disparar_cohorte(cohorte_id: str, body: TriggerRequest):
+    try:
+        return ProactiveService().trigger(cohorte_id, body.serie)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))

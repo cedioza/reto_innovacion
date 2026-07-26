@@ -89,6 +89,16 @@ defendible. Al armar el perfil de dominio, `sint_tiene_*` alimenta
 lo **declarado en conversación siempre pisa lo sintético**. El camino CSV de
 fallback no inventa señales (quedan `None`).
 
+## Panel de disparador proactivo (G3)
+
+`ProactiveService` identifica cohortes de afiliados con propensión clara
+(`GET /panel/cohortes`) y permite disparar el contacto sobre un afiliado
+puntual (`POST /panel/cohortes/{id}/disparar`), abriendo una conversación
+con perfil real precargado, recomendación calculada y mensaje de apertura
+determinista. **Deuda conocida**: en producción este disparo sería
+batch/orientado a evento y saldría por el canal real (WhatsApp); en el
+hackathon se simula manualmente desde el panel, sobre el canal web.
+
 ## Arquitectura de capas
 
 ```
