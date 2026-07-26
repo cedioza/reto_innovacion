@@ -49,6 +49,9 @@ class ConversationService:
     ) -> ConversationResponse:
         session_id = str(uuid.uuid4())
         profile: ProfileData | None = None
+        # Aditivo (plan G4, Fase 1): SERIE del afiliado identificado, para
+        # restaurar su identidad entre turnos (ver `orchestrator._ctx_from_session`).
+        serie: str | None = None
 
         # Try affiliate lookup
         if body.document_number:
@@ -65,6 +68,7 @@ class ConversationService:
                     source="base",
                     gender=affiliate.gender,
                 )
+                serie = body.document_number
 
         session = ConversationResponse(
             session_id=session_id,
@@ -72,6 +76,7 @@ class ConversationService:
             messages=[body.message] if body.message else [],
             profile=profile,
             next_action="Contanos sobre tu hogar para recomendarte el seguro ideal",
+            serie=serie,
         )
         self._repo.save(session.session_id, session)
         return session

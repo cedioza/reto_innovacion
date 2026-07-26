@@ -116,6 +116,9 @@ def _ctx_from_session(session_id: str, session: ConversationResponse) -> ToolCon
         profile=session.profile,
         recommendation=recommendation,
         quote=quote,
+        # Restaura la identidad del afiliado entre turnos (plan G4, Fase 1):
+        # sin esto, cada turno olvidaba qué SERIE ya se había identificado.
+        document_number=session.serie,
     )
 
 
@@ -219,6 +222,16 @@ def _sync_ctx_to_session(
 ) -> None:
     """Vuelca lo que las tools calcularon en `ctx` de vuelta a la sesión."""
     session.profile = ctx.profile
+
+    # Aditivo (plan G4, Fase 1): persiste la SERIE solo cuando `perfilar_cliente`
+    # confirmó que es un afiliado real (`profile.source == "base"`); nunca la
+    # pisa con `None` si la sesión ya tenía una SERIE identificada.
+    if (
+        ctx.document_number is not None
+        and ctx.profile is not None
+        and ctx.profile.source == "base"
+    ):
+        session.serie = ctx.document_number
 
     if ctx.recommendation is not None:
         product_id = ctx.recommendation.get("product_id", "hogar-estandar")

@@ -110,3 +110,7 @@ class ConversationResponse(BaseModel):
     quote: Optional[QuoteDetail] = None
     application: Optional[ConsentedApplication] = None
     next_action: str
+    # Aditivo (plan G4, Fase 1): SERIE del afiliado identificado en la sesión
+    # (si el lookup por `document_number` resolvió a un afiliado real).
+    # Opcional para no romper documentos ya persistidos sin este campo.
+    serie: Optional[str] = None
