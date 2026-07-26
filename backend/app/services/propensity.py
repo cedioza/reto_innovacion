@@ -139,7 +139,16 @@ CATEGORY_RULES: list[CategoryRule] = [
         weight=0.50,
         condition=lambda p: _has_children(p) is True,
         label=lambda p: "Hijos o dependientes a cargo que proteger",
-        evidence=lambda p: "Hijos declarados: sí",
+        evidence=lambda p: (
+            (
+                f"{getattr(p, 'children_count', None)} hijo declarado"
+                if getattr(p, "children_count", None) == 1
+                else f"{getattr(p, 'children_count', None)} hijos declarados"
+            )
+            if isinstance(getattr(p, "children_count", None), int)
+            and getattr(p, "children_count", None) >= 1
+            else "Hijos declarados: sí"
+        ),
     ),
     CategoryRule(
         category="vida",

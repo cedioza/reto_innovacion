@@ -34,6 +34,7 @@ class ProfileData(BaseModel):
     has_children: Optional[bool] = None
     has_vehicle: Optional[bool] = None
     has_credit: Optional[bool] = None
+    children_count: Optional[int] = None
 
 
 class Recommendation(BaseModel):
