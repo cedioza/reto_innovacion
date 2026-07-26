@@ -142,13 +142,19 @@ respuesta. Con `GEMINI_API_KEY` sin configurar (hasta H5), cae a un
 **fallback regex** (`ChannelHandler`, máquina de estados legada) — al
 completarse H5 el orquestador conversacional pasa a ser la única vía.
 
-El webhook de Meta (`POST /api/v1/webhooks/whatsapp`) ya está recableado
-sobre `MetaWhatsAppAdapter` + `channel_gateway.handle` como referencia del
-patrón. **Deuda conocida**: YCloud y Telegram siguen con su camino legado
-(`ChannelHandler.handle_incoming` inline) y se enchufan al contrato de
-adaptador en F4/F5; dedupe por `message.id` de Meta (Cloud API no lo
-deduplica hoy, a diferencia de YCloud que ya tiene `eventos_procesados`)
-queda como follow-up.
+El webhook de Meta (`POST /api/v1/webhooks/whatsapp`) y el de Telegram
+(`POST /api/v1/webhooks/telegram`, plan F5) ya están recableados sobre su
+adaptador (`MetaWhatsAppAdapter` / `TelegramAdapter`) + `channel_gateway.handle`.
+El adaptador de Telegram (`app/services/channels/telegram.py`) reutiliza los
+mismos helpers de `channels/base.py` que WhatsApp (`split_text`,
+`markdown_bold_to_whatsapp`) porque el modo `Markdown` legacy de Telegram
+comparte con WhatsApp el único asterisco para negrita; si el envío de un
+fragmento falla, reintenta ese mismo fragmento en texto plano
+(`parse_mode=None`) antes de darse por vencido. **Deuda conocida**: YCloud
+sigue con su camino legado (`ChannelHandler.handle_incoming` inline) y se
+enchufa al contrato de adaptador en F4; dedupe por `message.id` de Meta
+(Cloud API no lo deduplica hoy) y por `update_id` de Telegram (análogo al
+`eventos_procesados` que ya tiene YCloud) quedan como follow-up.
 
 ## Arquitectura de capas
 
