@@ -5,10 +5,21 @@ import MessageBubble from './components/MessageBubble.vue'
 import RecommendationCard from './components/RecommendationCard.vue'
 import QuoteCard from './components/QuoteCard.vue'
 import CompareCard from './components/CompareCard.vue'
+import ConsentCard from './components/ConsentCard.vue'
+import SuccessCard from './components/SuccessCard.vue'
 import TypingIndicator from './components/TypingIndicator.vue'
 import ChatInput from './components/ChatInput.vue'
 
-const { messages, isTyping, isAdjusting, sendMessage, applyAdjustments } = useChat()
+const {
+  messages,
+  isTyping,
+  isAdjusting,
+  isClosing,
+  sendMessage,
+  applyAdjustments,
+  acceptQuote,
+  submitConsent,
+} = useChat()
 
 const messagesEl = ref(null)
 
@@ -19,13 +30,25 @@ function componentFor(message) {
   if (message.type === 'recommendation') return RecommendationCard
   if (message.type === 'quote') return QuoteCard
   if (message.type === 'comparison') return CompareCard
+  if (message.type === 'consent') return ConsentCard
+  if (message.type === 'application') return SuccessCard
   return MessageBubble
 }
 
-// Props/eventos extra que solo aplican a ciertas tarjetas (QuoteCard/CompareCard).
+// Ya existe un mensaje de solicitud confirmada (type 'application') en el
+// historial: la tarjeta de consentimiento se congela (no se puede reenviar).
+function hasApplication() {
+  return messages.value.some((item) => item.type === 'application')
+}
+
+// Props/eventos extra que solo aplican a ciertas tarjetas
+// (QuoteCard/CompareCard/ConsentCard).
 function extraPropsFor(message) {
-  if (message.type === 'quote') return { onAdjust: () => applyAdjustments([]) }
+  if (message.type === 'quote') return { onAdjust: () => applyAdjustments([]), onAccept: () => acceptQuote() }
   if (message.type === 'comparison') return { busy: isAdjusting.value, onApply: applyAdjustments }
+  if (message.type === 'consent') {
+    return { busy: isClosing.value, closed: hasApplication(), onConfirm: submitConsent }
+  }
   return {}
 }
 

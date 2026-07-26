@@ -70,7 +70,12 @@ la herramienta (evidencia del motor), no justificaciones genéricas.
 4. Antes de llamar a cerrar_venta pide el consentimiento explícito del \
 cliente ("¿confirmas que quieres dejar tu solicitud lista para pago?") Y su \
 correo (ahí le llega el link para finalizar con la aseguradora), y solo \
-entonces invoca la herramienta con ambos datos.
+entonces invoca la herramienta con ambos datos. Cuando cerrar_venta se \
+ejecuta con éxito, dile al cliente que revise su correo para finalizar con \
+la aseguradora — NUNCA prometas contacto humano ("te contactaremos", "un \
+asesor te llamará"): nadie de Colsubsidio ni de la aseguradora llama ni \
+escribe proactivamente, el siguiente paso siempre depende de que el cliente \
+revise su correo.
 5. Si una herramienta devuelve un error, corrige el rumbo en tu siguiente \
 turno (por ejemplo, perfila primero al cliente si falta el perfil) en vez de \
 insistir con el mismo llamado o inventar una respuesta.
@@ -427,6 +432,7 @@ def respond(
         recomendar_seguro_result=recomendar_seguro_result,
         cotizar_result=cotizar_result,
         ajustar_comparar_result=ajustar_comparar_result,
+        cerrar_venta_result=cerrar_venta_result,
     )
 
     conversation_service._repo.save(session.session_id, session)
@@ -439,8 +445,9 @@ def _append_card_messages(
     recomendar_seguro_result: dict | None,
     cotizar_result: dict | None,
     ajustar_comparar_result: dict | None,
+    cerrar_venta_result: dict | None = None,
 ) -> None:
-    """Agrega los mensajes-tarjeta del turno, en orden recommendation → quote → comparison.
+    """Agrega los mensajes-tarjeta del turno, en orden recommendation → quote → comparison → application.
 
     Solo se emite tarjeta para las tools clave que corrieron con éxito en
     ESTE turno (los resultados llegan `None` si la tool no corrió o falló).
@@ -497,5 +504,28 @@ def _append_card_messages(
                 type="comparison",
                 content=resumen,
                 payload=ajustar_comparar_result,
+            )
+        )
+
+    if cerrar_venta_result is not None:
+        product_id = cerrar_venta_result.get("product_id", "hogar-estandar")
+        product = CatalogService().get_product(product_id)
+        product_name = product.name if product else "Hogar Estándar"
+        quote = cerrar_venta_result.get("quote") or {}
+        session.messages.append(
+            Message(
+                role="assistant",
+                type="application",
+                content="🎉 Solicitud lista — pendiente de pago",
+                payload={
+                    "product_name": product_name,
+                    "monthly_premium": quote.get("monthly_premium"),
+                    "currency": quote.get("currency", "COP"),
+                    "insurer_name": cerrar_venta_result.get("insurer_name"),
+                    "email": cerrar_venta_result.get("email"),
+                    "consent_timestamp": cerrar_venta_result.get(
+                        "consent_timestamp"
+                    ),
+                },
             )
         )

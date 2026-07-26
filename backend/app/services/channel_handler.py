@@ -48,9 +48,8 @@ PARSE_FAIL_TEXT = (
 )
 
 DONE_TEXT = (
-    "✅ ¡Listo! Tu solicitud de Hogar Estándar está completa y lista para pago. "
-    "Pronto te contactaremos para coordinar el pago. "
-    "Gracias por confiar en Colsubsidio 🎉"
+    "✅ ¡Listo! Tu solicitud de Hogar Estándar quedó registrada y lista para "
+    "pago. Gracias por confiar en Colsubsidio 🎉"
 )
 
 CONSENT_PROMPT = (
@@ -67,7 +66,7 @@ REJECT_TEXT = (
 
 READY_TEXT = (
     "Tu solicitud ya está lista para pago. "
-    "Si tenés dudas, contactanos."
+    "Tu comprobante queda registrado en el sistema."
 )
 
 
