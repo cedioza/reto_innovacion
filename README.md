@@ -42,6 +42,9 @@ Para quién: afiliados de Colsubsidio (perfil desde la base anonimizada por
 
 Requisitos: Python 3.12+, Node 20+.
 
+> 💡 En Windows, si `python` no está en el PATH (solo el launcher `py`), usa
+> `py -m venv .venv` y `py dev.py` en los comandos de abajo.
+
 ```bash
 git clone https://github.com/cedioza/reto_innovacion.git
 cd reto_innovacion
