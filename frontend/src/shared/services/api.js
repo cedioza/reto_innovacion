@@ -59,3 +59,11 @@ export function postMessage(sessionId, content) {
 export function postAdjustments(sessionId, adjustments) {
   return api.post(`/api/v1/conversations/${sessionId}/adjustments`, { adjustments })
 }
+
+export function getHandoff(token) {
+  return api.get(`/api/v1/handoff/${token}`)
+}
+
+export function finalizeHandoff(token) {
+  return api.post(`/api/v1/handoff/${token}/finalize`)
+}
