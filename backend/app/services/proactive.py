@@ -26,8 +26,10 @@ Las tres cohortes fueron validadas contra la base real de afiliados
 
 from app.models.affiliate_record import AffiliateRecord
 from app.repositories.affiliates import AffiliateRepository
+from app.schemas.conversation import ConversationCreate, Message, Recommendation
 from app.services.affiliate import AffiliateService
 from app.services.catalog import CatalogService
+from app.services.conversation import conversation_service
 from app.services.propensity import PropensityService
 
 COHORTS = [
@@ -154,4 +156,65 @@ class ProactiveService:
         return {
             "fuente": "postgres" if alguna_con_datos else "sin_datos",
             "cohortes": cohortes,
+        }
+
+    def trigger(self, cohorte_id: str, serie: str) -> dict:
+        """Simula el disparo proactivo de una cohorte hacia un afiliado.
+
+        En producción este disparo sería batch/orientado a evento y saldría
+        por el canal real (WhatsApp); en el hackathon se simula desde el
+        panel, abriendo la conversación por el canal web con el perfil real
+        del afiliado ya precargado (ver `backend/README.md`, sección Panel).
+        """
+        cohort = next((c for c in COHORTS if c["id"] == cohorte_id), None)
+        if cohort is None:
+            raise ValueError("Cohort not found")
+
+        if self._affiliate_service.lookup(serie) is None:
+            raise ValueError("Affiliate not found")
+
+        session = conversation_service.create(ConversationCreate(document_number=serie))
+
+        evaluacion = self._propensity_service.evaluate(session.profile)
+        product = self._catalog_service.get_product(evaluacion["product_id"])
+        product_name = product.name if product else evaluacion["product_id"]
+        session.recommendation = Recommendation(
+            product_id=evaluacion["product_id"],
+            product_name=product_name,
+            reasons=evaluacion["reasons"],
+        )
+
+        criterio_humano = cohort["criterio_humano"]
+        mensaje_apertura = (
+            "Hola, soy el asistente de seguros de Colsubsidio. Te contactamos "
+            f"porque tu perfil corresponde a este criterio: {criterio_humano}. "
+            f"Por eso pensamos que el seguro {product_name} puede interesarte. "
+            "¿Querés que te ayude a cotizarlo en unos minutos?"
+        )
+        session.messages.append(
+            Message(role="assistant", type="text", content=mensaje_apertura)
+        )
+        session.messages.append(
+            Message(
+                role="assistant",
+                type="recommendation",
+                content=f"📋 Recomendación: {product_name}",
+                payload={
+                    "product_id": evaluacion["product_id"],
+                    "product_name": product_name,
+                    "reasons": evaluacion["reasons"],
+                },
+            )
+        )
+        session.next_action = "Respondé para cotizar en 2 minutos"
+        conversation_service._repo.save(session.session_id, session)
+
+        return {
+            "session_id": session.session_id,
+            "serie": serie,
+            "producto": {
+                "product_id": evaluacion["product_id"],
+                "product_name": product_name,
+            },
+            "mensaje_apertura": mensaje_apertura,
         }

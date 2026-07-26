@@ -5,7 +5,7 @@ devuelve dicts planos con esta forma, validados aquí antes de salir por la
 API.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CohortMember(BaseModel):
@@ -34,3 +34,14 @@ class Cohort(BaseModel):
 class CohortsResponse(BaseModel):
     fuente: str
     cohortes: list[Cohort]
+
+
+class TriggerRequest(BaseModel):
+    serie: str = Field(min_length=1)
+
+
+class TriggerResponse(BaseModel):
+    session_id: str
+    serie: str
+    producto: CohortProduct
+    mensaje_apertura: str
