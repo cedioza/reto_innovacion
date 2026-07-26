@@ -86,6 +86,11 @@ de Colsubsidio y ofrece seguir con lo que sí puedes hacer. No improvises \
 procedimientos ni números de contacto.
 7. Si no entiendes lo que el cliente quiso decir, dilo con naturalidad y \
 pide que te lo repita de otra forma — nunca actúes sobre una suposición.
+8. Fricción cero: antes de pedirle un dato al cliente, consulta la \
+herramienta campos_pendientes de la categoría que estés trabajando. NUNCA \
+preguntes lo que figure como conocido — en vez de eso, menciona con \
+naturalidad que ya lo tienes por ser afiliado (p. ej. "como ya eres afiliado \
+Colsubsidio, sé que tienes X, así que no te lo voy a preguntar").
 """
 
 
@@ -129,6 +134,41 @@ def _contents_from_history(session: ConversationResponse) -> list[dict]:
     return contents
 
 
+def _perfilamiento_line(product_id: str | None, profile) -> str | None:
+    """Renglón compacto de fricción cero para `_build_status_summary`.
+
+    Usa `CatalogService` para resolver la categoría del producto recomendado
+    (import local: evita un ciclo si `catalog`/`profiling_matrix` llegaran a
+    importar algo de `orchestrator` en el futuro) y `campos_pendientes` de la
+    Matriz de Perfilamiento para listar SOLO los nombres de los campos
+    conocidos y pendientes de esa categoría — el detalle completo (fuente,
+    pregunta sugerida) lo trae la tool `campos_pendientes` bajo demanda.
+
+    Devuelve `None` si falta el perfil, el producto no existe o su categoría
+    no está en la Matriz (nunca rompe el resumen de estado por esto).
+    """
+    if profile is None or not product_id:
+        return None
+
+    from app.services.profiling_matrix import campos_pendientes
+
+    product = CatalogService().get_product(product_id)
+    if product is None:
+        return None
+
+    try:
+        resultado = campos_pendientes(product.category, profile)
+    except ValueError:
+        return None
+
+    conocidos = [item["campo"] for item in resultado["conocidos"]]
+    pendientes = [item["campo"] for item in resultado["pendientes"]]
+    return (
+        f"- Perfilamiento ({product.category}): conocidos {conocidos}, "
+        f"pendientes {pendientes}."
+    )
+
+
 def _build_status_summary(ctx: ToolContext) -> str:
     """Resumen de estado del funnel, generado por código (no por el LLM).
 
@@ -152,6 +192,9 @@ def _build_status_summary(ctx: ToolContext) -> str:
         lines.append(
             f"- Recomendación vigente: producto '{product_id}', razones: {reasons}."
         )
+        perfilamiento_line = _perfilamiento_line(product_id, ctx.profile)
+        if perfilamiento_line is not None:
+            lines.append(perfilamiento_line)
     else:
         lines.append("- Recomendación: aún no calculada.")
 

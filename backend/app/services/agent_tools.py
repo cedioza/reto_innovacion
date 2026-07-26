@@ -39,6 +39,7 @@ from app.schemas.conversation import ProfileData, QuoteDetail, Recommendation
 from app.services.affiliate import AffiliateService
 from app.services.catalog import CatalogService
 from app.services.consent import consent_service
+from app.services.profiling_matrix import MATRIX, campos_pendientes
 from app.services.propensity import PropensityService
 from app.services.quote import QuoteService
 
@@ -188,6 +189,8 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
             if declared.has_credit is not None
             else getattr(resolved, "has_credit", None)
         ),
+        source=fuente,
+        gender=found_affiliate.gender if afiliado else None,
     )
     ctx.profile = profile
 
@@ -196,6 +199,52 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         "fuente": fuente,
         "profile": profile.model_dump(),
     }
+
+
+# -- campos_pendientes ---------------------------------------------------------
+
+_CAMPOS_PENDIENTES_DECLARATION: dict[str, Any] = {
+    "name": "campos_pendientes",
+    "description": (
+        "Fricción cero: consulta ANTES de preguntarle un dato al cliente qué "
+        "campos de la categoría ya se conocen (porque el cliente es afiliado "
+        "y la base de Colsubsidio ya los tiene, o porque ya los declaró en la "
+        "conversación) y cuáles siguen pendientes. Nunca preguntes lo que "
+        "esta herramienta reporte como conocido; para lo pendiente, usa la "
+        "pregunta sugerida que devuelve."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "categoria": {
+                "type": "string",
+                "enum": ["hogar", "vida", "accidentes", "movilidad", "credito"],
+                "description": "Categoría del catálogo cuyo perfilamiento se está trabajando.",
+            },
+        },
+        "required": ["categoria"],
+    },
+}
+
+
+def _campo_categoria_desconocida_error(categoria: str) -> dict[str, Any]:
+    return {
+        "error": "categoría desconocida",
+        "detail": f"'{categoria}' no es una categoría válida ({sorted(MATRIX)}).",
+    }
+
+
+def _campos_pendientes_tool(
+    args: dict[str, Any], ctx: ToolContext
+) -> dict[str, Any]:
+    if ctx.profile is None:
+        return _sin_perfil_error()
+
+    categoria = args.get("categoria")
+    try:
+        return campos_pendientes(categoria, ctx.profile)
+    except ValueError:
+        return _campo_categoria_desconocida_error(categoria)
 
 
 # -- recomendar_seguro ----------------------------------------------------------
@@ -429,6 +478,10 @@ AGENT_TOOLS: dict[str, AgentTool] = {
     "perfilar_cliente": AgentTool(
         declaration=_PERFILAR_CLIENTE_DECLARATION,
         handler=_perfilar_cliente,
+    ),
+    "campos_pendientes": AgentTool(
+        declaration=_CAMPOS_PENDIENTES_DECLARATION,
+        handler=_campos_pendientes_tool,
     ),
     "recomendar_seguro": AgentTool(
         declaration=_RECOMENDAR_SEGURO_DECLARATION,

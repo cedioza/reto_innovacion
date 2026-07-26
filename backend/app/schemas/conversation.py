@@ -34,6 +34,12 @@ class ProfileData(BaseModel):
     has_children: Optional[bool] = None
     has_vehicle: Optional[bool] = None
     has_credit: Optional[bool] = None
+    # Aditivos (plan B5, Fase 1): de dónde salió el perfil ("base"|"declarado")
+    # y género — la base SÍ lo tiene (`AffiliateProfile.gender`), lo usa la
+    # Matriz de Perfilamiento (`app.services.profiling_matrix`) para saber qué
+    # NO preguntarle a un afiliado.
+    source: Optional[str] = None
+    gender: Optional[str] = None
 
 
 class Recommendation(BaseModel):
