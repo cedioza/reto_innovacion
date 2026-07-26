@@ -105,3 +105,52 @@ class TestEnrichmentValidation:
         assert self.service.record("sess-1", None, "hijos", "2") == "2"
         assert self.service.record("sess-1", None, "hijos", " 3 ") == "3"
         assert self.service.fields_for("sess-1")["hijos"] == "3"
+
+
+# --- Fase 1 (A6): campo "nombre" como dato enriquecido (personalización) ----
+#
+# TDD-light, RED antes de implementar: `EnrichmentService.ALLOWED_FIELDS`
+# todavía no conoce el campo "nombre". A diferencia del resto de campos
+# (hijos, mascota, vehiculo, etc.) que se normalizan a minúsculas, "nombre"
+# es un dato de personalización (para el saludo del asistente) y conserva la
+# capitalización tal como la declaró el cliente; solo se recorta espacio en
+# blanco y se valida que no esté vacío, no exceda 60 caracteres y no
+# contenga dígitos.
+
+
+class TestCampoNombre:
+    def setup_method(self) -> None:
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        init_db(self.engine)
+        self.service = EnrichmentService(engine=self.engine)
+
+    def test_nombre_valido_persiste(self) -> None:
+        assert self.service.record("sess", "S1", "nombre", "Carlos") == "Carlos"
+        assert self.service.fields_for("sess")["nombre"] == "Carlos"
+
+    def test_nombre_conserva_capitalizacion_y_trim(self) -> None:
+        assert (
+            self.service.record("sess", None, "nombre", "  María del Mar ")
+            == "María del Mar"
+        )
+
+    def test_nombre_vacio_valueerror(self) -> None:
+        with pytest.raises(ValueError):
+            self.service.record("sess", None, "nombre", "")
+
+        with pytest.raises(ValueError):
+            self.service.record("sess", None, "nombre", "   ")
+
+    def test_nombre_con_digitos_valueerror(self) -> None:
+        with pytest.raises(ValueError):
+            self.service.record("sess", None, "nombre", "C4rlos")
+
+    def test_nombre_muy_largo_valueerror(self) -> None:
+        with pytest.raises(ValueError):
+            self.service.record("sess", None, "nombre", "a" * 61)
+
+        assert self.service.record("sess", None, "nombre", "a" * 60) == "a" * 60

@@ -3,7 +3,9 @@
 Whitelist de la Matriz de Perfilamiento, sin ontología abierta; el service es
 el único punto de validación: valida y normaliza cada campo antes de
 delegarlo al `EnrichedProfileRepository`, y resuelve la lectura combinada de
-sesión + serie (la sesión pisa a la serie).
+sesión + serie (la sesión pisa a la serie). El campo `nombre` es una
+excepción: es solo personalización del trato (saludo), no una señal del
+perfil, así que nunca entra al motor de propensión/tarifas.
 """
 
 from __future__ import annotations
@@ -44,6 +46,17 @@ def _validate_ocupacion(valor: str) -> str:
     return normalizado
 
 
+def _validate_nombre(valor: str) -> str:
+    normalizado = valor.strip()
+    if not normalizado:
+        raise ValueError("nombre no puede estar vacío")
+    if len(normalizado) > 60:
+        raise ValueError("nombre excede el largo máximo (60 caracteres)")
+    if any(ch.isdigit() for ch in normalizado):
+        raise ValueError("nombre no puede contener dígitos")
+    return normalizado
+
+
 class EnrichmentService:
     """Dueño del `EnrichedProfileRepository`: valida, normaliza y persiste."""
 
@@ -55,6 +68,7 @@ class EnrichmentService:
         "fumador": _enum_validator({"si", "no"}),
         "ocupacion": _validate_ocupacion,
         "tipo_vivienda": _enum_validator({"house", "apartment"}),
+        "nombre": _validate_nombre,
     }
 
     def __init__(self, engine: Engine | None = None) -> None:

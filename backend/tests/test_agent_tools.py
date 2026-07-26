@@ -869,6 +869,7 @@ class TestEnriquecerPerfil:
             "fumador",
             "ocupacion",
             "tipo_vivienda",
+            "nombre",
         }
         assert set(enriquecer["parameters"]["required"]) >= {"campo", "valor"}
 
@@ -1110,3 +1111,115 @@ class TestMemoriaCrossSesionPorSerie:
         assert result["afiliado"] is False
         assert result["fuente"] == "declarado"
         assert ctx.profile.property_type == "house"
+
+
+# --- Fase 1 (A6): "nombre" como dato enriquecido de personalización ---------
+#
+# TDD-light, RED antes de implementar: el enum de `campo` en
+# `enriquecer_perfil` todavía no incluye "nombre" y `_perfilar_cliente`
+# todavía no expone la clave `datos_enriquecidos` en su resultado. Estos
+# tests describen el comportamiento objetivo: "nombre" se persiste vía
+# `EnrichmentService` como cualquier otro campo enriquecido, pero es un dato
+# de personalización (para el saludo del asistente) y NO se mapea a
+# `ProfileData` — no debe alterar la recomendación de `recomendar_seguro`.
+# `_perfilar_cliente` debe devolver, además, el dict campo->valor que ya
+# consulta de `EnrichmentService.fields_for(session_id, serie)` bajo la
+# clave "datos_enriquecidos" (`{}` si no hay nada enriquecido).
+#
+# Mismo patrón de setup que `TestEnriquecerPerfil` /
+# `TestMemoriaCrossSesionPorSerie`: engine SQLite in-memory + `init_db`, con
+# `app.repositories.db.get_engine` monkeypatcheado.
+
+
+class TestNombreEnConversacion:
+    def setup_method(self) -> None:
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        init_db(self.engine)
+
+    def test_enum_incluye_nombre(self) -> None:
+        declarations = tool_declarations()
+        enriquecer = next(
+            decl
+            for decl in declarations
+            if decl["name"] == "enriquecer_perfil"
+        )
+
+        assert "nombre" in enriquecer["parameters"]["properties"]["campo"]["enum"]
+
+    def test_capturar_nombre_persiste_sin_tocar_senales(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-nombre-1")
+        ctx.profile = ProfileData(
+            age_range="26-40",
+            property_type="house",
+            zone="urban",
+            stratum=3,
+        )
+
+        resultado_antes = execute_tool("recomendar_seguro", {}, ctx)
+
+        result = execute_tool(
+            "enriquecer_perfil", {"campo": "nombre", "valor": "Carlos"}, ctx
+        )
+
+        assert result["persistido"] is True
+        assert result["valor"] == "Carlos"
+
+        resultado_despues = execute_tool("recomendar_seguro", {}, ctx)
+
+        assert resultado_despues["product_id"] == resultado_antes["product_id"]
+        assert resultado_despues["score"] == resultado_antes["score"]
+
+        assert EnrichmentService(engine=self.engine).fields_for(
+            ctx.session_id
+        ) == {"nombre": "Carlos"}
+
+    def test_perfilar_devuelve_datos_enriquecidos_con_nombre(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+
+        ctx_a = ToolContext(session_id="sess-a-nombre")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S950"}, ctx_a
+        )
+        execute_tool(
+            "enriquecer_perfil", {"campo": "nombre", "valor": "Carlos"}, ctx_a
+        )
+
+        ctx_b = ToolContext(session_id="sess-b2")
+        result = execute_tool(
+            "perfilar_cliente", {"document_number": "S950"}, ctx_b
+        )
+
+        assert result["datos_enriquecidos"]["nombre"] == "Carlos"
+
+    def test_datos_enriquecidos_vacio_por_defecto(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-vacio-nombre")
+
+        result = execute_tool(
+            "perfilar_cliente", {"property_type": "house"}, ctx
+        )
+
+        assert result["datos_enriquecidos"] == {}
+
+    def test_resultado_json_safe(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-json-nombre")
+
+        result_enriquecer = execute_tool(
+            "enriquecer_perfil", {"campo": "nombre", "valor": "Carlos"}, ctx
+        )
+        json.dumps(result_enriquecer)
+
+        result_perfilar = execute_tool(
+            "perfilar_cliente", {"document_number": "S951"}, ctx
+        )
+        json.dumps(result_perfilar)
