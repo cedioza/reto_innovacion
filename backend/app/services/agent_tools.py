@@ -173,9 +173,21 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         stratum=resolved.stratum,
         age_range=resolved.age_range,
         has_family=declared.has_family,
-        has_children=declared.has_children,
-        has_vehicle=declared.has_vehicle,
-        has_credit=declared.has_credit,
+        has_children=(
+            declared.has_children
+            if declared.has_children is not None
+            else getattr(resolved, "has_children", None)
+        ),
+        has_vehicle=(
+            declared.has_vehicle
+            if declared.has_vehicle is not None
+            else getattr(resolved, "has_vehicle", None)
+        ),
+        has_credit=(
+            declared.has_credit
+            if declared.has_credit is not None
+            else getattr(resolved, "has_credit", None)
+        ),
     )
     ctx.profile = profile
 

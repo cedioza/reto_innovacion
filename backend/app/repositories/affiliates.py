@@ -256,7 +256,7 @@ class AffiliateRepository:
             document_number=record.serie,
             age_range=record.age_range,
             city=record.city,
-            property_type=None,  # not available in the real dataset
+            property_type=record.sint_tipo_vivienda,
             zone="urban" if record.city else None,
             household_segment=record.household_segment,
             population_segment=record.population_segment,
@@ -270,6 +270,9 @@ class AffiliateRepository:
             uses_drogueria=record.uses_drogueria,
             uses_agencias=record.uses_agencias,
             uses_vivienda=record.uses_vivienda,
+            has_children=record.sint_tiene_hijos,
+            has_vehicle=record.sint_tiene_vehiculo,
+            has_credit=record.sint_tiene_credito,
         )
 
     # -- internals: CSV/xlsx path ------------------------------------------------

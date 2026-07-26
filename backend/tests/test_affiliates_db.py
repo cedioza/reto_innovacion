@@ -154,3 +154,66 @@ class TestAffiliateRepositoryDb:
             assert profile.document_number == "C900"
         finally:
             Path(csv_path).unlink(missing_ok=True)
+
+
+class TestRecordToProfileSignals:
+    """Fase 3 del plan C2 (RED): las columnas sintéticas de `AffiliateRecord`
+    (sint_tiene_vehiculo/sint_tiene_credito/sint_tiene_hijos/sint_tipo_vivienda)
+    deben mapearse a has_vehicle/has_credit/has_children/property_type en el
+    `AffiliateProfile` resuelto — solo cuando el perfil viene de la BD. El
+    camino CSV (sin esas columnas) nunca debe inventar esas señales.
+    """
+
+    def setup_method(self) -> None:
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        init_db(self.engine)
+
+    def _write_fixture_csv(self) -> str:
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8-sig"
+        )
+        tmp.write(FIXTURE_CSV)
+        tmp.close()
+        return tmp.name
+
+    def test_sint_mapea_a_senales_del_perfil(self) -> None:
+        with Session(self.engine) as session:
+            session.add(
+                AffiliateRecord(
+                    serie="S777",
+                    age_range="20-35",
+                    sint_tiene_vehiculo=True,
+                    sint_tiene_credito=False,
+                    sint_tiene_hijos=True,
+                    sint_tipo_vivienda="house",
+                )
+            )
+            session.commit()
+        repo = AffiliateRepository(engine=self.engine, csv_path="Z:\\no\\existe.csv")
+
+        profile = repo.find_by_document("S777")
+
+        assert profile is not None
+        assert profile.has_vehicle is True
+        assert profile.has_credit is False
+        assert profile.has_children is True
+        assert profile.property_type == "house"
+
+    def test_camino_csv_no_inventa_senales(self) -> None:
+        csv_path = self._write_fixture_csv()
+        try:
+            repo = AffiliateRepository(engine=self.engine, csv_path=csv_path)
+
+            profile = repo.find_by_document("C900")
+
+            assert profile is not None
+            assert profile.has_vehicle is None
+            assert profile.has_credit is None
+            assert profile.has_children is None
+            assert profile.property_type is None
+        finally:
+            Path(csv_path).unlink(missing_ok=True)
