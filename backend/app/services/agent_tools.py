@@ -226,7 +226,8 @@ def _recomendar_seguro(
 _COTIZAR_DECLARATION: dict[str, Any] = {
     "name": "cotizar",
     "description": (
-        "Calcula la prima del seguro de hogar con el motor determinista de "
+        "Calcula la prima del producto recomendado por el motor de "
+        "propensión (recomendar_seguro) con el motor determinista de "
         "tarifas del catálogo, a partir del perfil del cliente ya obtenido "
         "con perfilar_cliente. El precio siempre sale del motor, nunca se "
         "inventa."
@@ -248,10 +249,13 @@ def _cotizar(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     if ctx.profile is None:
         return _sin_perfil_error()
 
+    product_id = (ctx.recommendation or {}).get("product_id", "hogar-estandar")
     adjustments = args.get("adjustments") or []
-    result = QuoteService().calculate_quote(ctx.profile, adjustments)
+    result = QuoteService().calculate_quote(
+        ctx.profile, adjustments, product_id=product_id
+    )
     ctx.quote = result
-    return {**result, "product_id": "hogar-estandar"}
+    return {**result, "product_id": product_id}
 
 
 # -- ajustar_comparar --------------------------------------------------------
@@ -303,14 +307,17 @@ def _ajustar_comparar(
         return _sin_cotizacion_error()
 
     actual = ctx.quote
+    product_id = (ctx.recommendation or {}).get("product_id", "hogar-estandar")
     adjustments = args.get("adjustments") or []
-    propuesta = QuoteService().calculate_quote(ctx.profile, adjustments)
+    propuesta = QuoteService().calculate_quote(
+        ctx.profile, adjustments, product_id=product_id
+    )
 
     diferencia_mensual = round(
         propuesta["monthly_premium"] - actual["monthly_premium"], 2
     )
 
-    product = CatalogService().get_product("hogar-estandar")
+    product = CatalogService().get_product(product_id)
     ajustes_disponibles = [
         {"code": adj.code, "name": adj.name, "description": adj.description}
         for adj in (product.adjustments if product else [])

@@ -94,14 +94,17 @@ class ConversationService:
 
         # Evaluate propensity
         propensity_result = self._propensity.evaluate(profile)
+        product_id = propensity_result["product_id"]
+        product = self._catalog.get_product(product_id)
+        product_name = product.name if product else product_id
         recommendation = Recommendation(
-            product_id=propensity_result["product_id"],
-            product_name="Hogar Estándar",
+            product_id=product_id,
+            product_name=product_name,
             reasons=propensity_result["reasons"],
         )
 
         # Calculate quote
-        quote_data = self._quote.calculate_quote(profile)
+        quote_data = self._quote.calculate_quote(profile, product_id=product_id)
         quote = QuoteDetail(
             base_amount=quote_data["base_amount"],
             adjustments=quote_data["adjustments"],
@@ -119,7 +122,7 @@ class ConversationService:
             Message(
                 role="assistant",
                 content=(
-                    "Basado en tu perfil, te recomendamos **Hogar Estándar**. "
+                    f"Basado en tu perfil, te recomendamos **{product_name}**. "
                     f"Tu prima mensual estimada es ${quote.monthly_premium:,.0f} COP. "
                     "¿Querés ver los detalles de cobertura o ajustar algo?"
                 ),
@@ -255,14 +258,21 @@ class ConversationService:
         if session.profile is None or session.quote is None:
             raise ValueError("Cannot adjust before a quote exists")
 
-        product = self._catalog.get_product("hogar-estandar")
+        product_id = (
+            session.recommendation.product_id
+            if session.recommendation
+            else "hogar-estandar"
+        )
+        product = self._catalog.get_product(product_id)
         available_codes = {adj.code for adj in (product.adjustments if product else [])}
         for code in adjustments:
             if code not in available_codes:
                 raise ValueError(f"Unknown adjustment code: {code}")
 
         actual = session.quote.model_dump()
-        propuesta = self._quote.calculate_quote(session.profile, adjustments)
+        propuesta = self._quote.calculate_quote(
+            session.profile, adjustments, product_id=product_id
+        )
         diferencia_mensual = round(
             propuesta["monthly_premium"] - actual["monthly_premium"], 2
         )
