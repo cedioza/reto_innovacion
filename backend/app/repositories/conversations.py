@@ -81,23 +81,45 @@ class ConversationRepository:
             statement = select(func.count()).select_from(ConversationRecord)
             return db_session.exec(statement).one()
 
-    def list_all(self) -> list[ConversationResponse]:
-        """Todas las conversaciones válidas, para el panel de métricas.
+    def list_all(self) -> list[dict]:
+        """Devuelve todas las conversaciones, más recientes primero.
 
-        Filas con `data` corrupto (no valida contra `ConversationResponse`)
-        se loguean con `logger.warning` y se saltan: nunca se lanza por datos
-        malos de una sola fila.
+        Escaneo completo de la tabla `conversaciones` (plan G4, Fase 2: vista
+        de clientes/búsqueda): aceptable a escala hackathon, no es un patrón
+        de producción (falta paginación/índices para volúmenes grandes).
+
+        Cada item es un dict `{"session", "canal", "created_at",
+        "updated_at"}`, con `session` ya deserializada a `ConversationResponse`.
+        Una fila cuyo `data` no valide como `ConversationResponse` (dato
+        corrupto o de un shape viejo) se salta con un warning, en vez de
+        romper el listado completo.
+
+        El panel de métricas (plan G5) consume solo las `session` de estos
+        items vía `ConversationService.list_all()`; ambos usos comparten este
+        único escaneo, incluido el salto defensivo de filas corruptas.
         """
-        conversations: list[ConversationResponse] = []
+        statement = select(ConversationRecord).order_by(
+            ConversationRecord.updated_at.desc()
+        )
         with Session(self._resolve_engine()) as db_session:
-            records = db_session.exec(select(ConversationRecord)).all()
+            records = db_session.exec(statement).all()
 
+        items: list[dict] = []
         for record in records:
             try:
-                conversations.append(ConversationResponse.model_validate(record.data))
-            except Exception:
+                session = ConversationResponse.model_validate(record.data)
+            except Exception:  # noqa: BLE001 - dato corrupto, se salta y se loguea
                 logger.warning(
-                    "Fila de conversación corrupta, se salta: session_id=%s",
+                    "fila corrupta en conversaciones, se omite session_id=%s",
                     record.session_id,
                 )
-        return conversations
+                continue
+            items.append(
+                {
+                    "session": session,
+                    "canal": record.canal,
+                    "created_at": record.created_at,
+                    "updated_at": record.updated_at,
+                }
+            )
+        return items

@@ -1,16 +1,32 @@
 <script setup>
-// Panel del disparador proactivo: muestra cohortes de afiliados con un
-// producto recomendado y permite simular el envío de una oferta proactiva
-// que abre el chat en la sesión recién creada por el backend.
+// Panel de negocio: pestaña "Cohortes" (disparador proactivo) y pestaña
+// "Clientes" (buscador + tabla de clientes del funnel).
+import { ref } from 'vue'
 import { usePanel } from './composables/usePanel'
+import { useClientes } from './composables/useClientes'
 import CohortCard from './components/CohortCard.vue'
 import FunnelSection from './components/FunnelSection.vue'
+import ClientesTab from './components/ClientesTab.vue'
+import ClienteDrawer from './components/ClienteDrawer.vue'
 
 const { cohortes, fuente, isLoading, error, disparandoSerie, errorDisparo, reintentar, disparar } =
   usePanel()
 
+const { ficha, isLoadingFicha, errorFicha, abrirFicha, reintentarFicha, cerrarFicha } =
+  useClientes({ autoLoad: false })
+
 function handleDisparar(cohorteId, serie) {
   disparar(cohorteId, serie)
+}
+
+const tabs = [
+  { id: 'cohortes', label: 'Cohortes' },
+  { id: 'clientes', label: 'Clientes' },
+]
+const tabActiva = ref('cohortes')
+
+function handleVerCliente(clienteId) {
+  abrirFicha(clienteId)
 }
 </script>
 
@@ -21,37 +37,63 @@ function handleDisparar(cohorteId, serie) {
       <p class="pitch">El seguro correcto, en el momento correcto, por el canal correcto.</p>
     </header>
 
-    <section class="funnel-block">
-      <h2>Funnel de ventas por producto</h2>
-      <FunnelSection />
-    </section>
+    <nav class="tabs">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        type="button"
+        class="tab-btn"
+        :class="{ active: tabActiva === tab.id }"
+        @click="tabActiva = tab.id"
+      >
+        {{ tab.label }}
+      </button>
+    </nav>
 
-    <p v-if="isLoading" class="state-text">Cargando cohortes…</p>
+    <div v-if="tabActiva === 'cohortes'">
+      <section class="funnel-block">
+        <h2>Funnel de ventas por producto</h2>
+        <FunnelSection />
+      </section>
 
-    <div v-else-if="error" class="state-card">
-      <p class="state-text">{{ error }}</p>
-      <button type="button" class="retry-btn" @click="reintentar">Reintentar</button>
-    </div>
+      <p v-if="isLoading" class="state-text">Cargando cohortes…</p>
 
-    <div v-else>
-      <p v-if="fuente === 'sin_datos'" class="empty-banner">
-        La base de afiliados está vacía — carga el dataset con cargar_afiliados.py
-      </p>
-
-      <p v-if="errorDisparo" class="disparo-error">{{ errorDisparo }}</p>
-
-      <div v-if="cohortes.length" class="cohortes-list">
-        <CohortCard
-          v-for="cohorte in cohortes"
-          :key="cohorte.id"
-          :cohorte="cohorte"
-          :disparando-serie="disparandoSerie"
-          @disparar="(serie) => handleDisparar(cohorte.id, serie)"
-        />
+      <div v-else-if="error" class="state-card">
+        <p class="state-text">{{ error }}</p>
+        <button type="button" class="retry-btn" @click="reintentar">Reintentar</button>
       </div>
 
-      <p v-else-if="fuente !== 'sin_datos'" class="state-text">No hay cohortes disponibles.</p>
+      <div v-else>
+        <p v-if="fuente === 'sin_datos'" class="empty-banner">
+          La base de afiliados está vacía — carga el dataset con cargar_afiliados.py
+        </p>
+
+        <p v-if="errorDisparo" class="disparo-error">{{ errorDisparo }}</p>
+
+        <div v-if="cohortes.length" class="cohortes-list">
+          <CohortCard
+            v-for="cohorte in cohortes"
+            :key="cohorte.id"
+            :cohorte="cohorte"
+            :disparando-serie="disparandoSerie"
+            @disparar="(serie) => handleDisparar(cohorte.id, serie)"
+          />
+        </div>
+
+        <p v-else-if="fuente !== 'sin_datos'" class="state-text">No hay cohortes disponibles.</p>
+      </div>
     </div>
+
+    <ClientesTab v-else-if="tabActiva === 'clientes'" @ver-cliente="handleVerCliente" />
+
+    <ClienteDrawer
+      v-if="ficha || isLoadingFicha || errorFicha"
+      :ficha="ficha"
+      :is-loading="isLoadingFicha"
+      :error="errorFicha"
+      @cerrar="cerrarFicha"
+      @reintentar="reintentarFicha"
+    />
   </section>
 </template>
 
@@ -81,6 +123,28 @@ function handleDisparar(cohorteId, serie) {
   font-size: 0.9rem;
   color: var(--chat-green-dark);
   font-weight: 600;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--chat-border);
+}
+
+.tab-btn {
+  padding: 0.55rem 1.1rem;
+  border: none;
+  background: transparent;
+  color: var(--chat-text-muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-btn.active {
+  color: var(--chat-green-dark);
+  border-bottom-color: var(--chat-green);
 }
 
 .state-text {
@@ -135,6 +199,9 @@ function handleDisparar(cohorteId, serie) {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  /* El funnel vive dentro de la pestaña "Cohortes" (un `div` normal, no el
+     flex de `.panel-view`), así que el separador con la lista va explícito. */
+  margin-bottom: 1.25rem;
 }
 
 .funnel-block h2 {

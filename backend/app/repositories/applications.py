@@ -27,12 +27,16 @@ importar este módulo o instanciar el repositorio, p. ej. en tests.
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import Engine, func
 from sqlmodel import Session, select
 
 from app.models.application import ApplicationRecord
 from app.repositories import db
 from app.schemas.conversation import ConsentedApplication
+
+logger = logging.getLogger(__name__)
 
 
 class ApplicationRepository:
@@ -98,3 +102,30 @@ class ApplicationRepository:
             if record is None:
                 return None
             return ConsentedApplication.model_validate(record.data)
+
+    def list_all(self) -> list[ConsentedApplication]:
+        """Devuelve todas las solicitudes, más recientes primero.
+
+        Escaneo completo de la tabla `solicitudes` (plan G4, Fase 2: vista de
+        clientes/búsqueda): aceptable a escala hackathon, no es un patrón de
+        producción. Una fila cuyo `data` no valide como `ConsentedApplication`
+        se salta con un warning, en vez de romper el listado completo.
+        """
+        statement = select(ApplicationRecord).order_by(
+            ApplicationRecord.created_at.desc()
+        )
+        with Session(self._resolve_engine()) as db_session:
+            records = db_session.exec(statement).all()
+
+        applications: list[ConsentedApplication] = []
+        for record in records:
+            try:
+                application = ConsentedApplication.model_validate(record.data)
+            except Exception:  # noqa: BLE001 - dato corrupto, se salta y se loguea
+                logger.warning(
+                    "fila corrupta en solicitudes, se omite session_id=%s",
+                    record.session_id,
+                )
+                continue
+            applications.append(application)
+        return applications

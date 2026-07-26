@@ -87,3 +87,11 @@ export function dispararOferta(cohorteId, serie) {
 export function getPanelMetricas() {
   return api.get('/api/v1/panel/metricas')
 }
+
+export function getPanelClientes(q) {
+  return api.get('/api/v1/panel/clientes' + (q ? '?q=' + encodeURIComponent(q) : ''))
+}
+
+export function getPanelCliente(clienteId) {
+  return api.get(`/api/v1/panel/clientes/${encodeURIComponent(clienteId)}`)
+}

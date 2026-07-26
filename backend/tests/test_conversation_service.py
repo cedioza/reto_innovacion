@@ -10,6 +10,7 @@ from app.schemas.conversation import (
     ProfileData,
     Message,
 )
+from app.models.affiliate import AffiliateProfile
 
 
 class TestConversationService:
@@ -85,3 +86,53 @@ class TestConversationService:
 
         accepted = self.service.accept_quote(session.session_id)
         assert accepted.state.value == "awaiting_consent"
+
+    # -- serie (plan G4, Fase 1) ---------------------------------------------
+    #
+    # `create` con un `document_number` que resuelve a un afiliado real debe
+    # guardar esa SERIE en la sesión (`session.serie`), para que turnos
+    # posteriores puedan restaurar el afiliado sin volver a pedirle el
+    # documento (ver `_ctx_from_session`/`_sync_ctx_to_session` en
+    # `app/services/orchestrator.py`).
+
+    def test_create_with_resolved_affiliate_sets_serie_and_persists(
+        self, monkeypatch
+    ) -> None:
+        document_number = "A001"
+        fake_profile = AffiliateProfile(
+            document_number=document_number,
+            age_range="26-40",
+            stratum=3,
+            property_type="house",
+            zone="urban",
+        )
+        monkeypatch.setattr(
+            self.service._affiliates, "lookup", lambda doc: fake_profile
+        )
+
+        body = ConversationCreate(document_number=document_number)
+        session = self.service.create(body)
+
+        assert session.serie == document_number
+
+        fetched = self.service.get(session.session_id)
+        assert fetched is not None
+        assert fetched.serie == document_number
+
+    def test_create_without_document_number_leaves_serie_none(self) -> None:
+        body = ConversationCreate(message=Message(role="user", content="Hola"))
+        session = self.service.create(body)
+        assert session.serie is None
+
+    # -- list_sessions (plan G4, Fase 2) --------------------------------------
+    #
+    # Delegación directa al `ConversationRepository.list_all()` subyacente.
+
+    def test_list_sessions_delegates_to_repository(self) -> None:
+        body = ConversationCreate(message=Message(role="user", content="Hola"))
+        session = self.service.create(body)
+
+        sessions = self.service.list_sessions()
+
+        session_ids = [item["session"].session_id for item in sessions]
+        assert session.session_id in session_ids

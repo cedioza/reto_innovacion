@@ -5,9 +5,12 @@ Postgres (criterio C3: mismo repo, mismo contrato de tipos, distinto engine
 subyacente).
 """
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import create_engine
+from datetime import datetime, timezone
 
+from sqlalchemy.pool import StaticPool
+from sqlmodel import Session, create_engine
+
+from app.models.conversation import ConversationRecord
 from app.repositories.conversations import ConversationRepository
 from app.repositories.db import init_db
 from app.schemas.conversation import (
@@ -115,3 +118,64 @@ class TestConversationRepository:
         assert [m.content for m in found.messages] == [
             m.content for m in s.messages
         ]
+
+    # -- list_all (plan G4, Fase 2) -------------------------------------------
+
+    def test_list_all_returns_sessions_ordered_by_updated_at_desc(self) -> None:
+        a = self._session("a")
+        b = self._session("b")
+        c = self._session("c")
+        self.repo.save(a.session_id, a)
+        self.repo.save(b.session_id, b)
+        self.repo.save(c.session_id, c)
+
+        # Se fuerza un orden de `updated_at` explícito e independiente de la
+        # resolución del reloj/orden de inserción, para que el assert sobre
+        # el orden descendente sea determinista.
+        with Session(self.engine) as db_session:
+            rec_a = db_session.get(ConversationRecord, "a")
+            rec_b = db_session.get(ConversationRecord, "b")
+            rec_c = db_session.get(ConversationRecord, "c")
+            rec_a.updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            rec_b.updated_at = datetime(2026, 1, 3, tzinfo=timezone.utc)
+            rec_c.updated_at = datetime(2026, 1, 2, tzinfo=timezone.utc)
+            db_session.add_all([rec_a, rec_b, rec_c])
+            db_session.commit()
+
+        items = self.repo.list_all()
+        session_ids = [item["session"].session_id for item in items]
+        assert session_ids == ["b", "c", "a"]
+
+    def test_list_all_item_has_expected_shape(self) -> None:
+        s = self._session("shape-1")
+        self.repo.save(s.session_id, s)
+
+        items = self.repo.list_all()
+        item = next(i for i in items if i["session"].session_id == "shape-1")
+
+        assert isinstance(item["session"], ConversationResponse)
+        assert item["session"].state == ConversationState.COLLECTING_PROFILE
+        assert item["canal"] is None
+        assert item["created_at"] is not None
+        assert item["updated_at"] is not None
+
+    def test_list_all_skips_corrupt_rows(self) -> None:
+        good = self._session("good-1")
+        self.repo.save(good.session_id, good)
+
+        with Session(self.engine) as db_session:
+            corrupt = ConversationRecord(
+                session_id="corrupt-1",
+                canal=None,
+                estado="collecting_profile",
+                data={"garbage": True},
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+            db_session.add(corrupt)
+            db_session.commit()
+
+        items = self.repo.list_all()
+        session_ids = [item["session"].session_id for item in items]
+        assert "good-1" in session_ids
+        assert "corrupt-1" not in session_ids

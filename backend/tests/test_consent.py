@@ -72,3 +72,21 @@ class TestConsentService:
     def test_get_nonexistent_returns_none(self) -> None:
         app = self.service.get_application("no-existe")
         assert app is None
+
+    # -- list_applications (plan G4, Fase 2) ----------------------------------
+    #
+    # Delegación directa al `ApplicationRepository.list_all()` subyacente.
+
+    def test_list_applications_delegates_to_repository(self) -> None:
+        self.service.capture(
+            session_id="sess-list-1",
+            product_id="hogar-estandar",
+            profile=self.profile,
+            recommendation=self.recommendation,
+            quote=self.quote,
+        )
+
+        apps = self.service.list_applications()
+
+        session_ids = [app.session_id for app in apps]
+        assert "sess-list-1" in session_ids

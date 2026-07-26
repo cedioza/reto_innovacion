@@ -13,7 +13,13 @@ The LLM is always scripted via `monkeypatch` of `orchestrator.generate_reply`
 
 from __future__ import annotations
 
-from app.schemas.conversation import ConversationCreate, ConversationState, ProfileData
+from app.schemas.conversation import (
+    ConversationCreate,
+    ConversationResponse,
+    ConversationState,
+    ProfileData,
+)
+from app.services.agent_tools import ToolContext
 from app.services.conversation import conversation_service
 from app.services.integrations.gemini_client import FALLBACK_MESSAGE, GeminiReply
 from app.services.quote import QuoteService
@@ -282,3 +288,64 @@ class TestRespondSessionNotFound:
 
         assert result is None
         assert len(llm.calls) == 0
+
+
+# -- serie (plan G4, Fase 1) --------------------------------------------------
+#
+# `_ctx_from_session`/`_sync_ctx_to_session` son funciones puras (sin LLM):
+# la SERIE de un afiliado real, guardada por `ConversationService.create` en
+# `session.serie`, debe restaurarse en el `ToolContext` del turno y volver a
+# persistirse en la sesión cuando el motor la vuelve a resolver.
+
+
+class TestCtxFromSessionRestoresSerie:
+    def test_ctx_from_session_restores_document_number_from_serie(self) -> None:
+        session = ConversationResponse(
+            session_id="sess-1",
+            state=ConversationState.COLLECTING_PROFILE,
+            next_action="seguir",
+            serie="A001",
+        )
+
+        ctx = orchestrator._ctx_from_session("sess-1", session)
+
+        assert ctx.document_number == "A001"
+
+
+class TestSyncCtxToSessionPersistsSerie:
+    def test_sync_writes_serie_when_document_number_and_profile_source_base(
+        self,
+    ) -> None:
+        session = ConversationResponse(
+            session_id="sess-2",
+            state=ConversationState.COLLECTING_PROFILE,
+            next_action="seguir",
+        )
+        ctx = ToolContext(
+            session_id="sess-2",
+            document_number="S123",
+            profile=ProfileData(age_range="26-40", stratum=3, source="base"),
+        )
+
+        orchestrator._sync_ctx_to_session(session, ctx, cerrar_venta_result=None)
+
+        assert session.serie == "S123"
+
+    def test_sync_does_not_clear_existing_serie_when_document_number_is_none(
+        self,
+    ) -> None:
+        session = ConversationResponse(
+            session_id="sess-3",
+            state=ConversationState.COLLECTING_PROFILE,
+            next_action="seguir",
+            serie="ALREADY-SET",
+        )
+        ctx = ToolContext(
+            session_id="sess-3",
+            document_number=None,
+            profile=ProfileData(age_range="26-40", stratum=3, source="declarado"),
+        )
+
+        orchestrator._sync_ctx_to_session(session, ctx, cerrar_venta_result=None)
+
+        assert session.serie == "ALREADY-SET"
