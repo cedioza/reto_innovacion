@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     database_url: str = ""
     resend_api_key: str = ""
     resend_test_to: str = ""
+    # Remitente de los correos vía Resend. El default es el sandbox del free
+    # tier (solo entrega al dueño de la cuenta); en producción debe ser una
+    # dirección del dominio verificado en resend.com/domains.
+    resend_from: str = "onboarding@resend.dev"
     telegram_bot_token: str = ""
     telegram_test_chat_id: str = ""
     whatsapp_verify_token: str = ""

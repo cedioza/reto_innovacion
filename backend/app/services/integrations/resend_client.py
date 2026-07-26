@@ -9,7 +9,6 @@ status HTTP o de configuración) se traduce en un dict `{"ok": False,
 import httpx
 
 RESEND_URL = "https://api.resend.com/emails"
-RESEND_FROM = "onboarding@resend.dev"
 
 
 def send_email(to: str, subject: str, html: str) -> dict:
@@ -26,7 +25,7 @@ def send_email(to: str, subject: str, html: str) -> dict:
 
     headers = {"Authorization": f"Bearer {settings.resend_api_key}"}
     payload = {
-        "from": RESEND_FROM,
+        "from": settings.resend_from,
         "to": [to],
         "subject": subject,
         "html": html,

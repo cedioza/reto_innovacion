@@ -1,8 +1,8 @@
 """Check activo de conectividad con Resend (envío de correo).
 
 Envía un correo de prueba real a `RESEND_TEST_TO` usando el remitente
-`onboarding@resend.dev` del free tier para confirmar que la API key
-configurada funciona. Nunca lanza excepción: cualquier fallo se traduce en un
+configurado en `RESEND_FROM` (default: sandbox del free tier) para confirmar
+que la API key configurada funciona. Nunca lanza excepción: cualquier fallo se traduce en un
 `IntegrationCheckResult` con `ok=False`. La API key nunca aparece en `detail`.
 """
 
@@ -14,7 +14,6 @@ import httpx
 from app.schemas.health import IntegrationCheckResult
 
 RESEND_URL = "https://api.resend.com/emails"
-RESEND_FROM = "onboarding@resend.dev"
 
 # Mapa settings -> nombre de env var, para el mensaje de "no configurado".
 _REQUIRED_ENV_BY_SETTING = {
@@ -42,7 +41,7 @@ def check() -> IntegrationCheckResult:
     headers = {"Authorization": f"Bearer {settings.resend_api_key}"}
     timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
     payload = {
-        "from": RESEND_FROM,
+        "from": settings.resend_from,
         "to": [settings.resend_test_to],
         "subject": f"health check ✅ {timestamp}",
         "text": "Correo de prueba del health check de integraciones (reto-innovacion).",
