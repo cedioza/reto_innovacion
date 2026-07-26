@@ -207,6 +207,16 @@ class AffiliateRepository:
         self.load_errors = errors
         return len(records)
 
+    def parsed_profiles(self) -> dict[str, AffiliateProfile]:
+        """Devuelve los perfiles ya parseados desde CSV/xlsx (SERIE -> perfil).
+
+        Accesor público mínimo para consumidores que necesitan iterar todos
+        los perfiles cargados (p. ej. `app.scripts.cargar_afiliados`) sin
+        tocar el diccionario interno `_profiles`. Si no se ha llamado antes
+        a `load_from_csv`, dispara la carga perezosa desde `self._csv_path`.
+        """
+        return self._load()[0]
+
     # -- internals: DB path -----------------------------------------------------
 
     def _resolve_engine(self):
