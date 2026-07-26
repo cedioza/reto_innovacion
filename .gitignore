@@ -11,6 +11,10 @@ venv/
 # BD SQLite local (fallback de desarrollo sin DATABASE_URL)
 backend/app/data/local.db
 
+# Data real de afiliados (nunca entra al repo)
+backend/app/data/afiliados.*
+backend/app/data/*.xlsx
+
 # Node / Vue
 node_modules/
 dist/

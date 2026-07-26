@@ -1,28 +1,131 @@
 """Affiliate profile repository.
 
-Loads anonymized affiliate data from a CSV file and provides
-lookup by document_number (SERIE). The CSV is expected to be
-a semicolon-delimited file with columns matching the dataset
-schema described in the vault:
+Loads anonymized affiliate data from a CSV file and provides lookup by
+document_number (SERIE). The CSV is expected to be a semicolon-delimited
+file matching the REAL Colsubsidio dataset schema:
 
-  SERIE;GENERO;RANGO_EDAD;RANGO_SALARIO;SEGMENTO_HOGAR;
-  SEGMENTO_POBLACION;CIUDAD;SEÑAL_CONSUMO_1..5
+  SERIE;GENERO;RANGO_EDAD;RANGO_SALARIAL;CATEGORIA;
+  SEGMENTO_GRUPO_FAMILIAR;SEGMENTO_POBLACIONAL;PIRAMIDE_NUEVA;
+  EMPRESA_FOCO;CIUDAD_AFILIADO;HOTELES;PISCILAGO;DROGUERIA;AGENCIAS;
+  VIVIENDA
 
-Only the first invocation reads the file; subsequent lookups
-use an in-memory dictionary.
+Headers are normalized (accents stripped, uppercased, spaces to
+underscores, BOM removed) before being matched against an explicit
+column → model field map, so minor header variations still resolve.
+
+`RANGO_SALARIAL` and `RANGO_EDAD` mix two source formats in the real
+data (e.g. "Entre 2 y 4 SMLV" and "2-4 SMLV") and can carry mojibake
+("a�os") — both are canonicalized by extracting digits only, never
+by matching the surrounding text.
+
+Only the first invocation reads the file; subsequent lookups use an
+in-memory dictionary. Corrupt rows (missing SERIE or other unparseable
+fields) are skipped and reported in `load_errors`; the load continues.
 """
 
 from __future__ import annotations
 
 import csv
+import logging
+import re
+import unicodedata
 from pathlib import Path
 
 from app.core.config import settings
 from app.models.affiliate import AffiliateProfile
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_AFFILIATE_CSV_PATH = str(
-    Path(__file__).resolve().parent.parent.parent / "data" / "afiliados.csv"
+    Path(__file__).resolve().parent.parent / "data" / "afiliados.csv"
 )
+
+# Real dataset column (normalized) -> AffiliateProfile field.
+HEADER_MAP = {
+    "SERIE": "document_number",
+    "GENERO": "gender",
+    "RANGO_EDAD": "age_range",
+    "RANGO_SALARIAL": "salary_range",
+    "CATEGORIA": "category",
+    "SEGMENTO_GRUPO_FAMILIAR": "household_segment",
+    "SEGMENTO_POBLACIONAL": "population_segment",
+    "PIRAMIDE_NUEVA": "pyramid",
+    "EMPRESA_FOCO": "empresa_foco",
+    "CIUDAD_AFILIADO": "city",
+    "HOTELES": "uses_hoteles",
+    "PISCILAGO": "uses_piscilago",
+    "DROGUERIA": "uses_drogueria",
+    "AGENCIAS": "uses_agencias",
+    "VIVIENDA": "uses_vivienda",
+}
+
+_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+
+# CSV encodings tried in order; the real files ship as utf-8-sig, but
+# some exports are latin-1.
+_ENCODINGS = ("utf-8-sig", "latin-1")
+
+
+def _strip_accents(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in normalized if not unicodedata.combining(c))
+
+
+def _normalize_header(name: str) -> str:
+    """NFKD-strip accents, drop BOM, uppercase, spaces -> underscores."""
+    cleaned = name.replace("﻿", "").strip()
+    cleaned = _strip_accents(cleaned)
+    return cleaned.upper().replace(" ", "_")
+
+
+def _clean(value: str | None) -> str | None:
+    """Trim a raw string field; empty becomes None."""
+    if value is None:
+        return None
+    text = value.strip()
+    return text or None
+
+
+def _parse_mark(value: str | None) -> bool | None:
+    """SI -> True, NO -> False, anything else (incl. empty) -> None."""
+    if value is None:
+        return None
+    text = value.strip().upper()
+    if text == "SI":
+        return True
+    if text == "NO":
+        return False
+    return None
+
+
+def _normalize_range(value: str | None, suffix: str = "") -> str | None:
+    """Canonicalize a range by digits only — immune to mojibake.
+
+    Two numbers found -> "<a>-<b>"; an open-ended signal ("mas de"/
+    "más de", ">") or a single trailing number -> "<n>+"; no digits or
+    empty input -> None. `suffix` (e.g. "SMLV") is appended when given.
+    """
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+
+    numbers = _NUMBER_RE.findall(text)
+    if not numbers:
+        return None
+
+    normalized_text = _strip_accents(text).lower()
+    open_ended = (
+        "mas de" in normalized_text or ">" in text or len(numbers) == 1
+    )
+
+    if len(numbers) >= 2 and not open_ended:
+        result = f"{numbers[0]}-{numbers[1]}"
+    else:
+        result = f"{numbers[-1]}+"
+
+    return f"{result} {suffix}".strip() if suffix else result
 
 
 class AffiliateRepository:
@@ -33,6 +136,7 @@ class AffiliateRepository:
             csv_path or settings.affiliate_csv_path or DEFAULT_AFFILIATE_CSV_PATH
         )
         self._profiles: dict[str, AffiliateProfile] | None = None
+        self.load_errors: list[str] = []
 
     # -- public API -----------------------------------------------------------
 
@@ -53,13 +157,10 @@ class AffiliateRepository:
 
         Returns:
             Number of records loaded.
-
-        Raises:
-            FileNotFoundError: If the CSV does not exist.
-            csv.Error: If the file is malformed.
         """
         records, errors = self._parse_csv(path)
         self._profiles = records
+        self.load_errors = errors
         return len(records)
 
     # -- internals ------------------------------------------------------------
@@ -67,58 +168,153 @@ class AffiliateRepository:
     def _load(self) -> tuple[dict[str, AffiliateProfile], list[str]]:
         """Lazy-load CSV on first call."""
         if self._profiles is not None:
-            return self._profiles, []
-        return self._parse_csv(self._csv_path)
+            return self._profiles, self.load_errors
+        records, errors = self._parse_csv(self._csv_path)
+        self._profiles = records
+        self.load_errors = errors
+        return records, errors
+
+    def _read_rows(
+        self, path: str, encoding: str
+    ) -> list[tuple[int, dict[str, str]]]:
+        """Read the CSV once, remapping headers to model field names."""
+        with open(path, newline="", encoding=encoding) as f:
+            reader = csv.DictReader(f, delimiter=";")
+            field_map = {
+                original: HEADER_MAP.get(_normalize_header(original))
+                for original in (reader.fieldnames or [])
+            }
+            rows: list[tuple[int, dict[str, str]]] = []
+            for row_num, row in enumerate(reader, start=2):
+                mapped: dict[str, str] = {}
+                for original, value in row.items():
+                    field = field_map.get(original)
+                    if field:
+                        mapped[field] = value
+                rows.append((row_num, mapped))
+            return rows
+
+    def _read_xlsx_rows(
+        self, path: str
+    ) -> tuple[list[tuple[int, dict[str, str]]] | None, str | None]:
+        """Read an xlsx file, remapping headers to model field names.
+
+        Returns (rows, None) on success, (None, None) when the file does
+        not exist (silent, mirrors the CSV FileNotFoundError fallback) and
+        (None, error_message) when the file exists but cannot be parsed
+        as a workbook (corrupt / not a real xlsx).
+        """
+        import openpyxl  # local import: only needed on the xlsx branch
+
+        try:
+            workbook = openpyxl.load_workbook(
+                path, read_only=True, data_only=True
+            )
+        except FileNotFoundError:
+            return None, None
+        except Exception as exc:  # noqa: BLE001 - never let a bad file raise
+            return None, f"no se pudo leer el archivo xlsx: {exc}"
+
+        try:
+            sheet = workbook.active
+            rows_iter = sheet.iter_rows(values_only=True)
+            try:
+                header = next(rows_iter)
+            except StopIteration:
+                return [], None
+
+            field_map = {
+                original: HEADER_MAP.get(_normalize_header(str(original)))
+                for original in header
+                if original is not None
+            }
+
+            rows: list[tuple[int, dict[str, str]]] = []
+            for row_num, values in enumerate(rows_iter, start=2):
+                mapped: dict[str, str] = {}
+                for original, value in zip(header, values):
+                    field = field_map.get(original)
+                    if not field:
+                        continue
+                    if value is None:
+                        mapped[field] = ""
+                    elif isinstance(value, str):
+                        mapped[field] = value
+                    else:
+                        mapped[field] = str(value)
+                rows.append((row_num, mapped))
+            return rows, None
+        except Exception as exc:  # noqa: BLE001 - never let a bad file raise
+            return None, f"no se pudo leer el archivo xlsx: {exc}"
+        finally:
+            workbook.close()  # read_only keeps the file open otherwise
+
+    def _rows_to_profiles(
+        self, rows: list[tuple[int, dict[str, str]]]
+    ) -> tuple[dict[str, AffiliateProfile], list[str]]:
+        """Shared mapping/normalization path for both CSV and xlsx rows."""
+        profiles: dict[str, AffiliateProfile] = {}
+        errors: list[str] = []
+
+        for row_num, row in rows:
+            serie = (row.get("document_number") or "").strip()
+            if not serie:
+                errors.append(f"fila {row_num}: falta SERIE")
+                continue
+            try:
+                profiles[serie] = self._row_to_profile(serie, row)
+            except (ValueError, TypeError) as exc:
+                errors.append(f"fila {row_num}: {exc}")
+
+        if errors:
+            logger.warning(
+                "carga de afiliados completada con %d error(es)", len(errors)
+            )
+
+        return profiles, errors
 
     def _parse_csv(
         self, path: str
     ) -> tuple[dict[str, AffiliateProfile], list[str]]:
-        profiles: dict[str, AffiliateProfile] = {}
-        errors: list[str] = []
+        if path.lower().endswith(".xlsx"):
+            rows, read_error = self._read_xlsx_rows(path)
+            if rows is None:
+                return {}, [read_error] if read_error else []
+            return self._rows_to_profiles(rows)
 
-        try:
-            with open(path, newline="", encoding="utf-8-sig") as f:
-                reader = csv.DictReader(f, delimiter=";")
-                for row_num, row in enumerate(reader, start=2):
-                    serie = (row.get("SERIE") or "").strip()
-                    if not serie:
-                        errors.append(f"Row {row_num}: missing SERIE")
-                        continue
-                    try:
-                        profile = self._row_to_profile(serie, row)
-                        profiles[serie] = profile
-                    except (ValueError, TypeError) as exc:
-                        errors.append(f"Row {row_num}: {exc}")
-        except FileNotFoundError:
-            pass  # Graceful fallback — repository returns empty
+        rows: list[tuple[int, dict[str, str]]] = []
+        for encoding in _ENCODINGS:
+            try:
+                rows = self._read_rows(path, encoding)
+                break
+            except FileNotFoundError:
+                return {}, []  # Graceful fallback — repository returns empty
+            except UnicodeDecodeError:
+                continue
+        else:
+            return {}, []
 
-        self._profiles = profiles
-        return profiles, errors
+        return self._rows_to_profiles(rows)
 
     @staticmethod
     def _row_to_profile(serie: str, row: dict[str, str]) -> AffiliateProfile:
-        raw_stratum = (row.get("SEGMENTO_HOGAR") or "").strip()
-        stratum = 3
-        if raw_stratum:
-            try:
-                stratum = int(raw_stratum)
-            except ValueError:
-                stratum = 3  # default when parsing fails
-
+        city = _clean(row.get("city"))
         return AffiliateProfile(
             document_number=serie,
-            age_range=(row.get("RANGO_EDAD") or "").strip(),
-            stratum=stratum,
-            city=(row.get("CIUDAD") or "").strip() or None,
-            property_type=None,  # not directly available in dataset
-            zone=(
-                "urban"
-                if (row.get("CIUDAD") or "").strip()
-                else "rural"
-            ),
-            household_segment=(row.get("SEGMENTO_HOGAR") or "").strip() or None,
-            population_segment=(
-                row.get("SEGMENTO_POBLACION") or ""
-            ).strip() or None,
-            salary_range=(row.get("RANGO_SALARIO") or "").strip() or None,
+            age_range=_normalize_range(row.get("age_range")) or "",
+            city=city,
+            property_type=None,  # not available in the real dataset
+            zone="urban" if city else None,
+            household_segment=_clean(row.get("household_segment")),
+            population_segment=_clean(row.get("population_segment")),
+            salary_range=_normalize_range(row.get("salary_range"), suffix="SMLV"),
+            gender=_clean(row.get("gender")),
+            category=_clean(row.get("category")),
+            pyramid=_clean(row.get("pyramid")),
+            empresa_foco=_clean(row.get("empresa_foco")),
+            uses_hoteles=_parse_mark(row.get("uses_hoteles")),
+            uses_piscilago=_parse_mark(row.get("uses_piscilago")),
+            uses_drogueria=_parse_mark(row.get("uses_drogueria")),
+            uses_agencias=_parse_mark(row.get("uses_agencias")),
+            uses_vivienda=_parse_mark(row.get("uses_vivienda")),
         )
