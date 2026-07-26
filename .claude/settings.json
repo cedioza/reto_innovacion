@@ -1,7 +1,44 @@
 {
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
-      "Bash(python -m pytest -q)"
+      "Bash(git:*)",
+      "PowerShell(git:*)",
+      "Bash(python:*)",
+      "PowerShell(python:*)",
+      "Bash(python -m pytest -q)",
+      "Bash(python -m pytest:*)",
+      "Bash(pytest:*)",
+      "PowerShell(pytest:*)",
+      "Bash(npm:*)",
+      "PowerShell(npm:*)",
+      "Bash(node:*)",
+      "PowerShell(node:*)",
+      "Bash(npx:*)",
+      "PowerShell(npx:*)",
+      "Bash(uvicorn:*)",
+      "PowerShell(uvicorn:*)",
+      "Bash(curl:*)",
+      "PowerShell(curl:*)",
+      "Bash(powershell -NoProfile -File:*)",
+      "PowerShell(powershell -NoProfile -File:*)",
+      "Bash(cmd /c mklink:*)",
+      "PowerShell(cmd /c mklink:*)",
+      "Bash(cmd /c rmdir:*)",
+      "PowerShell(cmd /c rmdir:*)",
+      "Bash(cd:*)",
+      "PowerShell(cd:*)",
+      "PowerShell(netstat:*)",
+      "PowerShell(Stop-Process:*)",
+      "Bash(./.venv/Scripts/python.exe:*)",
+      "Bash(\"c:\\\\machine\\\\development\\\\progress\\\\colsubsidio\\\\fork\\\\reto_innovacion\\\\backend\\\\.venv\\\\Scripts\\\\python.exe\":*)",
+      "Bash(\"C:\\\\machine\\\\development\\\\progress\\\\colsubsidio\\\\fork\\\\reto_innovacion\\\\backend\\\\.venv\\\\Scripts\\\\python.exe\":*)",
+      "PowerShell(& \"c:\\\\machine\\\\development\\\\progress\\\\colsubsidio\\\\fork\\\\reto_innovacion\\\\backend\\\\.venv\\\\Scripts\\\\python.exe\":*)",
+      "PowerShell(& \"C:\\\\machine\\\\development\\\\progress\\\\colsubsidio\\\\fork\\\\reto_innovacion\\\\backend\\\\.venv\\\\Scripts\\\\python.exe\":*)",
+      "Read(//c/machine/development/progress/colsubsidio/fork/reto_innovacion/.claude/analysis/plans/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\machine\\development\\progress\\colsubsidio\\fork\\worktrees"
     ]
   }
 }
