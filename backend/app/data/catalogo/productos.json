@@ -72,5 +72,298 @@
         "65+": 1.15
       }
     }
+  },
+  {
+    "id": "accidentes-personales",
+    "name": "Accidentes Personales",
+    "description": "Protección ante accidentes con atención médica inmediata.",
+    "category": "accidentes",
+    "coverages": [
+      {
+        "name": "Gastos Médicos por Accidente",
+        "description": "Cobertura de gastos médicos derivados de un accidente."
+      },
+      {
+        "name": "Muerte Accidental",
+        "description": "Indemnización a beneficiarios en caso de muerte accidental."
+      },
+      {
+        "name": "Incapacidad Total o Permanente",
+        "description": "Indemnización por incapacidad total o permanente a causa de un accidente."
+      },
+      {
+        "name": "Renta Diaria por Hospitalización",
+        "description": "Pago de una renta diaria mientras dure la hospitalización por accidente."
+      }
+    ],
+    "exclusions": [
+      {
+        "name": "Enfermedad General",
+        "description": "No es un seguro de salud, no cubre enfermedades generales."
+      },
+      {
+        "name": "Accidentes bajo Alcohol o Sustancias",
+        "description": "Accidentes ocurridos bajo efectos de alcohol o sustancias psicoactivas."
+      },
+      {
+        "name": "Deportes Extremos no Declarados",
+        "description": "Accidentes en la práctica de deportes extremos no declarados."
+      },
+      {
+        "name": "Autolesiones",
+        "description": "Lesiones causadas de forma intencional por el asegurado."
+      }
+    ],
+    "adjustments": [
+      {
+        "code": "extreme_sports",
+        "name": "Cobertura Deportes Extremos",
+        "description": "Amplía la cobertura a la práctica de deportes extremos",
+        "premium_modifier": 1.30
+      },
+      {
+        "code": "family_plan",
+        "name": "Plan Familiar",
+        "description": "Extiende la cobertura al grupo familiar",
+        "premium_modifier": 1.75
+      },
+      {
+        "code": "higher_medical",
+        "name": "Gastos Médicos Ampliados",
+        "description": "Incrementa el límite de gastos médicos por accidente",
+        "premium_modifier": 1.20
+      }
+    ],
+    "base_price": 60000.0,
+    "currency": "COP",
+    "factors": {
+      "age_range": {
+        "18-25": 1.10,
+        "60+": 1.20
+      }
+    }
+  },
+  {
+    "id": "vida-basico",
+    "name": "Vida Básico",
+    "description": "Protección económica para tu familia ante fallecimiento o enfermedades graves.",
+    "category": "vida",
+    "coverages": [
+      {
+        "name": "Muerte por Cualquier Causa",
+        "description": "Indemnización a beneficiarios por fallecimiento del asegurado."
+      },
+      {
+        "name": "Incapacidad Total y Permanente",
+        "description": "Indemnización por incapacidad total y permanente del asegurado."
+      },
+      {
+        "name": "Enfermedades Graves (anticipo)",
+        "description": "Anticipo del capital asegurado ante el diagnóstico de una enfermedad grave."
+      },
+      {
+        "name": "Auxilio Funerario",
+        "description": "Pago de un auxilio para cubrir gastos funerarios."
+      },
+      {
+        "name": "Auxilio Educativo para Hijos",
+        "description": "Apoyo económico para la educación de los hijos del asegurado."
+      }
+    ],
+    "exclusions": [
+      {
+        "name": "Suicidio en el Primer Año",
+        "description": "No cubre suicidio ocurrido durante el primer año de vigencia."
+      },
+      {
+        "name": "Preexistencias no Declaradas",
+        "description": "Condiciones médicas preexistentes no declaradas al momento de contratar."
+      },
+      {
+        "name": "Actividades de Alto Riesgo no Declaradas",
+        "description": "Actividades de alto riesgo practicadas sin haber sido declaradas."
+      },
+      {
+        "name": "Guerra o Conflicto Armado",
+        "description": "Fallecimiento o incapacidad derivados de guerra o conflicto armado."
+      }
+    ],
+    "adjustments": [
+      {
+        "code": "double_capital",
+        "name": "Doble Capital Asegurado",
+        "description": "Duplica el capital asegurado en caso de siniestro",
+        "premium_modifier": 1.80
+      },
+      {
+        "code": "critical_illness_plus",
+        "name": "Enfermedades Graves Ampliadas",
+        "description": "Amplía la lista de enfermedades graves cubiertas",
+        "premium_modifier": 1.35
+      },
+      {
+        "code": "funeral_assist",
+        "name": "Asistencia Funeraria Familiar",
+        "description": "Extiende la asistencia funeraria al grupo familiar",
+        "premium_modifier": 1.10
+      }
+    ],
+    "base_price": 180000.0,
+    "currency": "COP",
+    "factors": {
+      "age_range": {
+        "18-25": 0.85,
+        "26-35": 0.95,
+        "36-45": 1.0,
+        "46-60": 1.35,
+        "60+": 1.80
+      }
+    }
+  },
+  {
+    "id": "movilidad-auto",
+    "name": "Auto Todo Riesgo",
+    "description": "Cobertura integral para tu vehículo ante daños, hurto y accidentes de tránsito.",
+    "category": "movilidad",
+    "coverages": [
+      {
+        "name": "Responsabilidad Civil Extracontractual",
+        "description": "Cubre los daños ocasionados a terceros con el vehículo asegurado."
+      },
+      {
+        "name": "Pérdida Total por Daños o Hurto",
+        "description": "Indemnización por pérdida total del vehículo por daños o hurto."
+      },
+      {
+        "name": "Pérdida Parcial",
+        "description": "Cobertura por daños parciales al vehículo."
+      },
+      {
+        "name": "Asistencia en Carretera y Grúa",
+        "description": "Servicio de grúa y asistencia en caso de varada en carretera."
+      },
+      {
+        "name": "Conductor Elegido",
+        "description": "Servicio de conductor elegido en caso de no poder manejar."
+      }
+    ],
+    "exclusions": [
+      {
+        "name": "Conductor sin Licencia Vigente",
+        "description": "No cubre siniestros ocurridos con conductor sin licencia vigente."
+      },
+      {
+        "name": "Conducción en Embriaguez",
+        "description": "No cubre siniestros ocurridos bajo estado de embriaguez."
+      },
+      {
+        "name": "Uso Comercial no Declarado",
+        "description": "No cubre el uso comercial del vehículo si no fue declarado."
+      },
+      {
+        "name": "Competencias o Carreras",
+        "description": "No cubre siniestros ocurridos en competencias o carreras."
+      }
+    ],
+    "adjustments": [
+      {
+        "code": "zero_deductible",
+        "name": "Deducible Cero",
+        "description": "Elimina el deducible a cargo del asegurado",
+        "premium_modifier": 1.25
+      },
+      {
+        "code": "replacement_car",
+        "name": "Vehículo de Reemplazo",
+        "description": "Otorga un vehículo de reemplazo mientras dure la reparación",
+        "premium_modifier": 1.15
+      },
+      {
+        "code": "low_mileage",
+        "name": "Bajo Kilometraje",
+        "description": "Descuento por bajo kilometraje recorrido anualmente",
+        "premium_modifier": 0.90
+      }
+    ],
+    "base_price": 1440000.0,
+    "currency": "COP",
+    "factors": {
+      "vehicle_type": {
+        "auto": 1.0,
+        "moto": 0.65
+      },
+      "age_range": {
+        "18-25": 1.30
+      }
+    }
+  },
+  {
+    "id": "credito-vida-deudor",
+    "name": "Crédito Vida Deudor",
+    "description": "Protege el pago de tu crédito ante fallecimiento, incapacidad o desempleo.",
+    "category": "credito",
+    "coverages": [
+      {
+        "name": "Fallecimiento Salda la Deuda",
+        "description": "Salda el saldo insoluto del crédito en caso de fallecimiento del deudor."
+      },
+      {
+        "name": "Incapacidad Total y Permanente",
+        "description": "Salda el saldo del crédito ante incapacidad total y permanente del deudor."
+      },
+      {
+        "name": "Desempleo Involuntario (hasta 3 cuotas)",
+        "description": "Cubre hasta 3 cuotas del crédito en caso de desempleo involuntario."
+      },
+      {
+        "name": "Enfermedades Graves (anticipo de saldo)",
+        "description": "Anticipa el saldo de la deuda ante el diagnóstico de una enfermedad grave."
+      }
+    ],
+    "exclusions": [
+      {
+        "name": "Preexistencias no Declaradas",
+        "description": "Condiciones médicas preexistentes no declaradas al momento de contratar."
+      },
+      {
+        "name": "Suicidio en el Primer Año",
+        "description": "No cubre suicidio ocurrido durante el primer año de vigencia."
+      },
+      {
+        "name": "Renuncia Voluntaria o Despido con Justa Causa",
+        "description": "No cubre desempleo por renuncia voluntaria o despido con justa causa."
+      },
+      {
+        "name": "Guerra o Conflicto Armado",
+        "description": "Fallecimiento o incapacidad derivados de guerra o conflicto armado."
+      }
+    ],
+    "adjustments": [
+      {
+        "code": "unemployment_plus",
+        "name": "Desempleo Ampliado",
+        "description": "Amplía el número de cuotas cubiertas por desempleo",
+        "premium_modifier": 1.20
+      },
+      {
+        "code": "joint_debtor",
+        "name": "Codeudor Cubierto",
+        "description": "Extiende la cobertura al codeudor del crédito",
+        "premium_modifier": 1.60
+      }
+    ],
+    "base_price": 300000.0,
+    "currency": "COP",
+    "factors": {
+      "age_range": {
+        "46-60": 1.25,
+        "60+": 1.60
+      },
+      "debt_balance": {
+        "<50M": 0.60,
+        "50-150M": 1.0,
+        ">150M": 1.50
+      }
+    }
   }
 ]
