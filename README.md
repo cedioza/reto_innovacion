@@ -98,6 +98,66 @@ docker compose up -d db      # detener: docker compose down (−v borra datos)
 
 y en `backend/.env`: `DATABASE_URL=postgresql://reto:reto@localhost:5432/reto_innovacion`.
 
+## Variables de entorno y cuentas (guía para terceros)
+
+Todo se configura por variables de entorno — **nunca** hay URLs, puertos ni
+secretos hardcodeados. Las plantillas son
+[backend/.env.example](backend/.env.example) y
+[frontend/.env.example](frontend/.env.example) (cópialas a `.env`); `Settings`
+tiene defaults vacíos, así que **cada integración se activa solo si configuras su
+variable** — nada revienta por dejarlas en blanco.
+
+### Niveles de configuración (de cero cuentas a demo completo)
+
+| Nivel | Qué funciona | Qué necesitas |
+|---|---|---|
+| **0 — Sin cuentas** | Funnel REST completo (perfil → recomendación → cotización → consentimiento), motor de propensión, catálogo, tests, panel | Nada. `.env` copiado tal cual; BD cae a SQLite local |
+| **1 — Chat con IA** | Conversación LLM completa en el chat web (texto y notas de voz) | `GEMINI_API_KEY` |
+| **2 — Cierre por correo** | Handoff real: correo con link a la página de la aseguradora simulada | `RESEND_API_KEY` (+ dominio verificado para enviar a terceros) |
+| **3 — Canales de mensajería** | WhatsApp y/o Telegram como canal | Cuenta YCloud **o** Meta for Developers; bot de @BotFather |
+| **4 — Producción** | Deploy público con webhooks entrantes | VPS con Dokploy, dominio HTTPS, Postgres gestionado |
+
+### Backend (`backend/.env`)
+
+| Variable | Requerida para | Dónde se obtiene / notas |
+|---|---|---|
+| `GEMINI_API_KEY` | Chat LLM (nivel 1) | [Google AI Studio](https://aistudio.google.com/apikey) — free tier con límite de requests/día; para un demo largo, habilita billing o rota keys |
+| `DATABASE_URL` | Postgres (niveles 0–4) | Vacía = SQLite local automático. Local: `docker compose up -d db`. Producción: string del servicio Postgres de Dokploy (`postgresql://…` — el backend lo adapta a psycopg3 solo) |
+| `RESEND_API_KEY`, `RESEND_TEST_TO` | Correo de handoff (nivel 2) | [resend.com](https://resend.com) (free tier). ⚠️ Sin `RESEND_FROM` usa el sandbox `onboarding@resend.dev`, que **solo entrega al correo del dueño de la cuenta** |
+| `RESEND_FROM` | Correo a terceros | Dirección de un dominio verificado en resend.com/domains |
+| `WHATSAPP_PROVIDER` | Elegir proveedor WhatsApp | `ycloud` (default) o `meta` |
+| `YCLOUD_API_KEY`, `YCLOUD_WHATSAPP_FROM`, `YCLOUD_WEBHOOK_SECRET` | WhatsApp vía YCloud | Cuenta en [ycloud.com](https://ycloud.com); el secret firma los webhooks entrantes (obligatorio en producción; `YCLOUD_ALLOW_UNSIGNED_WEBHOOKS=true` solo para dev local) |
+| `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TEST_TO`, `WHATSAPP_VERIFY_TOKEN` | WhatsApp vía Meta | App en [Meta for Developers](https://developers.facebook.com) con número de prueba; el verify token lo inventas tú y debe coincidir en la consola de Meta |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_TEST_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET` | Telegram | Bot creado con [@BotFather](https://t.me/BotFather); el chat id sale de `getUpdates` tras escribirle al bot |
+| `FRONTEND_URL` | CORS | URL del front (default `http://localhost:5173`); en producción con subdominios, la URL pública del front |
+| `BACKEND_PUBLIC_URL` | Webhooks entrantes | Dominio HTTPS público del backend (Dokploy); requerido para registrar el webhook de Telegram y apuntar los de WhatsApp |
+| `AFFILIATE_CSV_PATH` | Base real de afiliados | Ruta local al xlsx/CSV oficial (**no está en el repo**); vacía = fallback a perfil declarado |
+| `CATALOG_JSON_PATH` | Override del catálogo | Vacía = usa el JSON versionado del repo (lo normal) |
+
+### Frontend (`frontend/.env`)
+
+| Variable | Notas |
+|---|---|
+| `VITE_API_URL` | URL base de la API (default `http://localhost:8000`). ⚠️ En producción se inyecta **en build time** (build arg del Dockerfile): vacía para same-domain, `https://api.<dominio>` para subdominios. Cambiarla exige rebuild |
+
+### Consejos de senior para el que llega de cero
+
+- **Empieza en nivel 0 y sube de a uno**: verifica `pytest` verde y el funnel REST
+  en `/docs` antes de meter ninguna key — así distingues un problema de entorno de
+  uno de credenciales.
+- **Secretos**: `.env` está en `.gitignore`; no lo commitees nunca. En Dokploy las
+  env vars se cargan en la UI de cada Application, no en archivos.
+- **Webhooks** (nivel 3–4): necesitan URL pública HTTPS — en local usa el chat web
+  (no requiere webhooks); los canales de mensajería solo tienen sentido con el
+  backend ya desplegado. Tras cada deploy con dominio nuevo: re-apuntar YCloud/Meta
+  y re-registrar Telegram (`POST /api/v1/webhooks/telegram/set`).
+- **Postgres**: el fallback a SQLite es solo para desarrollo — en producción
+  configura `DATABASE_URL` siempre (las tablas se crean solas al arrancar, no hay
+  migraciones que correr).
+- **Datos**: si Colsubsidio te compartió el archivo de afiliados, cárgalo con
+  `python -m app.scripts.cargar_afiliados <ruta> --replace` apuntando
+  `DATABASE_URL` a la BD destino; verifica con `SELECT count(*)` (~500k).
+
 ## Cómo funciona la recomendación
 
 El corazón del proyecto es un **motor de propensión explicable**: 16 reglas
