@@ -23,6 +23,7 @@ from app.repositories import db as db_module
 from app.repositories.db import init_db
 from app.schemas.conversation import ProfileData
 from app.services.catalog import CatalogService
+from app.services.enrichment import EnrichmentService
 from app.services.integrations import resend_client
 from app.services.propensity import PropensityService
 from app.services.quote import QuoteService
@@ -424,11 +425,11 @@ class TestToolDeclarationsPhase3:
         assert "ajustar_comparar" in names
         assert "cerrar_venta" in names
 
-    def test_has_five_unique_declarations_with_required_keys(self) -> None:
+    def test_has_six_unique_declarations_with_required_keys(self) -> None:
         declarations = tool_declarations()
         names = [decl["name"] for decl in declarations]
 
-        assert len(declarations) == 5
+        assert len(declarations) == 6
         assert len(names) == len(set(names))
         for decl in declarations:
             assert "name" in decl
@@ -818,3 +819,290 @@ class TestPerfilarClienteConBaseSintetica:
 
         assert ctx.profile.has_credit is True
         assert result["fuente"] == "declarado"
+
+
+# --- Fase 2 (A4): enriquecer_perfil ------------------------------------------
+#
+# TDD-light, RED antes de implementar: la tool `enriquecer_perfil` todavía no
+# existe en `AGENT_TOOLS`. Estos tests describen el comportamiento objetivo:
+# persiste el dato declarado vía `EnrichmentService` (el mismo motor de
+# `app/services/enrichment.py`, ya implementado y probado en
+# `test_enrichment.py`) y, cuando el campo tiene un mapeo directo al perfil en
+# memoria (hijos, vehiculo, credito, tipo_vivienda), también actualiza
+# `ctx.profile` para que el motor de propensión (`recomendar_seguro`) vea el
+# dato enriquecido de inmediato, sin esperar a un nuevo `perfilar_cliente`.
+#
+# Engine: SQLite in-memory + `init_db`, con `app.repositories.db.get_engine`
+# monkeypatcheado — mismo patrón que `TestPerfilarClienteConBaseSintetica`.
+
+
+class TestEnriquecerPerfil:
+    def setup_method(self) -> None:
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        init_db(self.engine)
+
+    def test_declaracion_registrada(self) -> None:
+        declarations = tool_declarations()
+        names = [decl["name"] for decl in declarations]
+        assert "enriquecer_perfil" in names
+
+        enriquecer = next(
+            decl
+            for decl in declarations
+            if decl["name"] == "enriquecer_perfil"
+        )
+        properties = enriquecer["parameters"]["properties"]
+
+        assert set(properties["campo"]["enum"]) == {
+            "hijos",
+            "mascota",
+            "vehiculo",
+            "credito",
+            "fumador",
+            "ocupacion",
+            "tipo_vivienda",
+        }
+        assert set(enriquecer["parameters"]["required"]) >= {"campo", "valor"}
+
+    def test_criterio1_hijos_y_mascota_persisten(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-e1")
+
+        result_hijos = execute_tool(
+            "enriquecer_perfil", {"campo": "hijos", "valor": "2"}, ctx
+        )
+        result_mascota = execute_tool(
+            "enriquecer_perfil", {"campo": "mascota", "valor": "perro"}, ctx
+        )
+
+        assert EnrichmentService(engine=self.engine).fields_for("sess-e1") == {
+            "hijos": "2",
+            "mascota": "perro",
+        }
+        assert ctx.profile.children_count == 2
+        assert ctx.profile.has_children is True
+        assert result_hijos["persistido"] is True
+        assert result_mascota["persistido"] is True
+
+    def test_criterio2_dato_enriquecido_cambia_recomendacion(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-e2")
+        ctx.profile = ProfileData(
+            age_range="26-40",
+            property_type="house",
+            zone="urban",
+            stratum=3,
+        )
+
+        before = execute_tool("recomendar_seguro", {}, ctx)
+        assert before["product_id"] == "hogar-estandar"
+
+        execute_tool(
+            "enriquecer_perfil", {"campo": "vehiculo", "valor": "si"}, ctx
+        )
+
+        result = execute_tool("recomendar_seguro", {}, ctx)
+
+        assert result["product_id"] == "movilidad-auto"
+        codes = {reason["code"] for reason in result["reasons"]}
+        assert "vehicle_declared" in codes
+
+    def test_evidencia_cita_numero_de_hijos(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-e3")
+        ctx.profile = ProfileData(age_range="26-40")
+
+        execute_tool(
+            "enriquecer_perfil", {"campo": "hijos", "valor": "2"}, ctx
+        )
+        result = execute_tool("recomendar_seguro", {}, ctx)
+
+        vida_entry = next(
+            entry for entry in result["ranking"] if entry["category"] == "vida"
+        )
+        dependents_reason = next(
+            reason
+            for reason in vida_entry["reasons"]
+            if reason["code"] == "dependents"
+        )
+        assert "2" in dependents_reason["evidence"]
+
+    def test_campo_desconocido_error_controlado(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-e4")
+
+        result = execute_tool(
+            "enriquecer_perfil", {"campo": "color", "valor": "azul"}, ctx
+        )
+
+        assert isinstance(result, dict)
+        assert "error" in result
+
+    def test_valor_invalido_error_controlado(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-e5")
+
+        result = execute_tool(
+            "enriquecer_perfil", {"campo": "hijos", "valor": "perro"}, ctx
+        )
+
+        assert isinstance(result, dict)
+        assert "error" in result
+
+    def test_sin_perfil_previo_crea_perfil(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-e6")
+        assert ctx.profile is None
+
+        execute_tool(
+            "enriquecer_perfil", {"campo": "vehiculo", "valor": "si"}, ctx
+        )
+
+        assert ctx.profile is not None
+        assert ctx.profile.has_vehicle is True
+
+    def test_resultado_json_safe(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-e7")
+
+        result = execute_tool(
+            "enriquecer_perfil", {"campo": "hijos", "valor": "2"}, ctx
+        )
+
+        json.dumps(result)
+
+
+# --- Fase 3 (A4): memoria cross-sesión por SERIE en perfilar_cliente --------
+#
+# TDD-light, RED antes de implementar: `_perfilar_cliente` todavía no
+# consulta `EnrichmentService().fields_for(ctx.session_id, serie=document_number)`
+# al resolver el perfil base — hoy solo usa lo declarado en el turno actual y
+# lo que trae `AffiliateService.resolve` (base real o sintética). Estos tests
+# describen el comportamiento objetivo: cuando el mismo `document_number`
+# (serie) reaparece en una sesión nueva, lo enriquecido previamente en OTRA
+# sesión para esa serie debe aplicarse al perfil, con la prioridad declarado
+# ahora > enriquecido previo > base real/sintética. Fallan hoy por la razón
+# correcta (el código de producción aún no lee la memoria cross-sesión por
+# serie).
+#
+# Mismo patrón de setup que `TestEnriquecerPerfil` /
+# `TestPerfilarClienteConBaseSintetica`: engine SQLite in-memory + `init_db`,
+# con `app.repositories.db.get_engine` monkeypatcheado.
+
+
+class TestMemoriaCrossSesionPorSerie:
+    def setup_method(self) -> None:
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        init_db(self.engine)
+
+    def test_serie_recupera_enriquecido_en_sesion_nueva(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+
+        ctx_a = ToolContext(session_id="sess-a")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S900"}, ctx_a
+        )
+        execute_tool(
+            "enriquecer_perfil", {"campo": "vehiculo", "valor": "si"}, ctx_a
+        )
+
+        ctx_b = ToolContext(session_id="sess-b")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S900"}, ctx_b
+        )
+
+        assert ctx_b.profile.has_vehicle is True
+
+        result = execute_tool("recomendar_seguro", {}, ctx_b)
+
+        assert result["product_id"] == "movilidad-auto"
+
+    def test_enriquecido_pisa_base_sintetica(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        with Session(self.engine) as session:
+            session.add(
+                AffiliateRecord(
+                    serie="S901",
+                    age_range="26-40",
+                    sint_tiene_vehiculo=True,
+                )
+            )
+            session.commit()
+
+        ctx_a = ToolContext(session_id="sess-a")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S901"}, ctx_a
+        )
+        execute_tool(
+            "enriquecer_perfil", {"campo": "vehiculo", "valor": "no"}, ctx_a
+        )
+
+        ctx_b = ToolContext(session_id="sess-b")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S901"}, ctx_b
+        )
+
+        assert ctx_b.profile.has_vehicle is False
+
+    def test_declarado_ahora_pisa_enriquecido(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+
+        ctx_a = ToolContext(session_id="sess-a")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S902"}, ctx_a
+        )
+        execute_tool(
+            "enriquecer_perfil", {"campo": "vehiculo", "valor": "si"}, ctx_a
+        )
+
+        ctx_b = ToolContext(session_id="sess-b")
+        execute_tool(
+            "perfilar_cliente",
+            {"document_number": "S902", "has_vehicle": False},
+            ctx_b,
+        )
+
+        assert ctx_b.profile.has_vehicle is False
+
+    def test_hijos_enriquecidos_llegan_con_numero(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+
+        ctx_a = ToolContext(session_id="sess-a")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S903"}, ctx_a
+        )
+        execute_tool(
+            "enriquecer_perfil", {"campo": "hijos", "valor": "2"}, ctx_a
+        )
+
+        ctx_b = ToolContext(session_id="sess-b")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S903"}, ctx_b
+        )
+
+        assert ctx_b.profile.children_count == 2
+        assert ctx_b.profile.has_children is True
+
+    def test_sin_documento_sin_cambios(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-sin-doc")
+
+        result = execute_tool(
+            "perfilar_cliente", {"property_type": "house"}, ctx
+        )
+
+        assert result["afiliado"] is False
+        assert result["fuente"] == "declarado"
+        assert ctx.profile.property_type == "house"
