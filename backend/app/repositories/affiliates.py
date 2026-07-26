@@ -293,6 +293,16 @@ class AffiliateRepository:
         return profile
 
     @staticmethod
+    def record_to_profile(record: AffiliateRecord) -> AffiliateProfile:
+        """Accesor público: convierte un `AffiliateRecord` en `AffiliateProfile`.
+
+        Delegado mínimo sobre `_record_to_profile` para que consumidores
+        externos (p. ej. `app.scripts.curar_series`) no tengan que llamar un
+        método "privado" del repositorio.
+        """
+        return AffiliateRepository._record_to_profile(record)
+
+    @staticmethod
     def _record_to_profile(record: AffiliateRecord) -> AffiliateProfile:
         return AffiliateProfile(
             document_number=record.serie,
