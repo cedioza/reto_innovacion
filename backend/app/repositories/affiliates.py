@@ -1,5 +1,10 @@
 """Affiliate profile repository.
 
+Fuente primaria: la tabla `afiliados` (ver `app.models.affiliate_record`),
+indexada por SERIE. El CSV/xlsx descrito abajo queda como fallback para
+desarrollo (cuando la tabla no existe, está vacía, o la conexión a la BD
+falla) y también como parser de carga inicial hacia esa tabla.
+
 Loads anonymized affiliate data from a CSV file and provides lookup by
 document_number (SERIE). The CSV is expected to be a semicolon-delimited
 file matching the REAL Colsubsidio dataset schema:
@@ -31,8 +36,13 @@ import re
 import unicodedata
 from pathlib import Path
 
+from sqlalchemy import func
+from sqlmodel import Session, select
+
 from app.core.config import settings
 from app.models.affiliate import AffiliateProfile
+from app.models.affiliate_record import AffiliateRecord
+from app.repositories import db
 
 logger = logging.getLogger(__name__)
 
@@ -131,22 +141,56 @@ def _normalize_range(value: str | None, suffix: str = "") -> str | None:
 class AffiliateRepository:
     """Repository backed by an in-memory dict built from CSV."""
 
-    def __init__(self, csv_path: str | None = None) -> None:
+    def __init__(self, csv_path: str | None = None, engine=None) -> None:
         self._csv_path = (
             csv_path or settings.affiliate_csv_path or DEFAULT_AFFILIATE_CSV_PATH
         )
+        self._engine = engine
         self._profiles: dict[str, AffiliateProfile] | None = None
         self.load_errors: list[str] = []
+        self._db_cache: dict[str, AffiliateProfile] = {}
+        self._csv_fallback_logged = False
 
     # -- public API -----------------------------------------------------------
 
     def find_by_document(self, document_number: str) -> AffiliateProfile | None:
+        cached = self._db_cache.get(document_number)
+        if cached is not None:
+            return cached
+
+        from_db = self._db_lookup(document_number)
+        if from_db is not None:
+            return from_db
+
+        if self._db_has_rows():
+            return None
+
+        self._log_csv_fallback()
         return self._load()[0].get(document_number)
 
     def exists(self, document_number: str) -> bool:
+        if document_number in self._db_cache:
+            return True
+
+        if self._db_lookup(document_number) is not None:
+            return True
+
+        if self._db_has_rows():
+            return False
+
+        self._log_csv_fallback()
         return document_number in self._load()[0]
 
     def count(self) -> int:
+        if self._db_has_rows():
+            try:
+                with Session(self._resolve_engine()) as session:
+                    statement = select(func.count()).select_from(AffiliateRecord)
+                    return session.exec(statement).one()
+            except Exception:  # noqa: BLE001 - never let a bad DB raise
+                pass
+
+        self._log_csv_fallback()
         return len(self._load()[0])
 
     def load_from_csv(self, path: str) -> int:
@@ -163,7 +207,62 @@ class AffiliateRepository:
         self.load_errors = errors
         return len(records)
 
-    # -- internals ------------------------------------------------------------
+    # -- internals: DB path -----------------------------------------------------
+
+    def _resolve_engine(self):
+        return self._engine or db.get_engine()
+
+    def _log_csv_fallback(self) -> None:
+        if not self._csv_fallback_logged:
+            logger.info(
+                "tabla 'afiliados' no disponible o sin datos; usando fallback CSV/xlsx"
+            )
+            self._csv_fallback_logged = True
+
+    def _db_has_rows(self) -> bool:
+        try:
+            with Session(self._resolve_engine()) as session:
+                return session.exec(select(AffiliateRecord).limit(1)).first() is not None
+        except Exception:  # noqa: BLE001 - never let a bad DB raise
+            return False
+
+    def _db_lookup(self, document_number: str) -> AffiliateProfile | None:
+        try:
+            with Session(self._resolve_engine()) as session:
+                record = session.get(AffiliateRecord, document_number)
+        except Exception:  # noqa: BLE001 - never let a bad DB raise
+            return None
+
+        if record is None:
+            return None
+
+        profile = self._record_to_profile(record)
+        self._db_cache[document_number] = profile
+        return profile
+
+    @staticmethod
+    def _record_to_profile(record: AffiliateRecord) -> AffiliateProfile:
+        return AffiliateProfile(
+            document_number=record.serie,
+            age_range=record.age_range,
+            city=record.city,
+            property_type=None,  # not available in the real dataset
+            zone="urban" if record.city else None,
+            household_segment=record.household_segment,
+            population_segment=record.population_segment,
+            salary_range=record.salary_range,
+            gender=record.gender,
+            category=record.category,
+            pyramid=record.pyramid,
+            empresa_foco=record.empresa_foco,
+            uses_hoteles=record.uses_hoteles,
+            uses_piscilago=record.uses_piscilago,
+            uses_drogueria=record.uses_drogueria,
+            uses_agencias=record.uses_agencias,
+            uses_vivienda=record.uses_vivienda,
+        )
+
+    # -- internals: CSV/xlsx path ------------------------------------------------
 
     def _load(self) -> tuple[dict[str, AffiliateProfile], list[str]]:
         """Lazy-load CSV on first call."""
