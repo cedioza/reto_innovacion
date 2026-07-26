@@ -976,3 +976,133 @@ class TestEnriquecerPerfil:
         )
 
         json.dumps(result)
+
+
+# --- Fase 3 (A4): memoria cross-sesión por SERIE en perfilar_cliente --------
+#
+# TDD-light, RED antes de implementar: `_perfilar_cliente` todavía no
+# consulta `EnrichmentService().fields_for(ctx.session_id, serie=document_number)`
+# al resolver el perfil base — hoy solo usa lo declarado en el turno actual y
+# lo que trae `AffiliateService.resolve` (base real o sintética). Estos tests
+# describen el comportamiento objetivo: cuando el mismo `document_number`
+# (serie) reaparece en una sesión nueva, lo enriquecido previamente en OTRA
+# sesión para esa serie debe aplicarse al perfil, con la prioridad declarado
+# ahora > enriquecido previo > base real/sintética. Fallan hoy por la razón
+# correcta (el código de producción aún no lee la memoria cross-sesión por
+# serie).
+#
+# Mismo patrón de setup que `TestEnriquecerPerfil` /
+# `TestPerfilarClienteConBaseSintetica`: engine SQLite in-memory + `init_db`,
+# con `app.repositories.db.get_engine` monkeypatcheado.
+
+
+class TestMemoriaCrossSesionPorSerie:
+    def setup_method(self) -> None:
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        init_db(self.engine)
+
+    def test_serie_recupera_enriquecido_en_sesion_nueva(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+
+        ctx_a = ToolContext(session_id="sess-a")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S900"}, ctx_a
+        )
+        execute_tool(
+            "enriquecer_perfil", {"campo": "vehiculo", "valor": "si"}, ctx_a
+        )
+
+        ctx_b = ToolContext(session_id="sess-b")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S900"}, ctx_b
+        )
+
+        assert ctx_b.profile.has_vehicle is True
+
+        result = execute_tool("recomendar_seguro", {}, ctx_b)
+
+        assert result["product_id"] == "movilidad-auto"
+
+    def test_enriquecido_pisa_base_sintetica(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        with Session(self.engine) as session:
+            session.add(
+                AffiliateRecord(
+                    serie="S901",
+                    age_range="26-40",
+                    sint_tiene_vehiculo=True,
+                )
+            )
+            session.commit()
+
+        ctx_a = ToolContext(session_id="sess-a")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S901"}, ctx_a
+        )
+        execute_tool(
+            "enriquecer_perfil", {"campo": "vehiculo", "valor": "no"}, ctx_a
+        )
+
+        ctx_b = ToolContext(session_id="sess-b")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S901"}, ctx_b
+        )
+
+        assert ctx_b.profile.has_vehicle is False
+
+    def test_declarado_ahora_pisa_enriquecido(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+
+        ctx_a = ToolContext(session_id="sess-a")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S902"}, ctx_a
+        )
+        execute_tool(
+            "enriquecer_perfil", {"campo": "vehiculo", "valor": "si"}, ctx_a
+        )
+
+        ctx_b = ToolContext(session_id="sess-b")
+        execute_tool(
+            "perfilar_cliente",
+            {"document_number": "S902", "has_vehicle": False},
+            ctx_b,
+        )
+
+        assert ctx_b.profile.has_vehicle is False
+
+    def test_hijos_enriquecidos_llegan_con_numero(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+
+        ctx_a = ToolContext(session_id="sess-a")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S903"}, ctx_a
+        )
+        execute_tool(
+            "enriquecer_perfil", {"campo": "hijos", "valor": "2"}, ctx_a
+        )
+
+        ctx_b = ToolContext(session_id="sess-b")
+        execute_tool(
+            "perfilar_cliente", {"document_number": "S903"}, ctx_b
+        )
+
+        assert ctx_b.profile.children_count == 2
+        assert ctx_b.profile.has_children is True
+
+    def test_sin_documento_sin_cambios(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="sess-sin-doc")
+
+        result = execute_tool(
+            "perfilar_cliente", {"property_type": "house"}, ctx
+        )
+
+        assert result["afiliado"] is False
+        assert result["fuente"] == "declarado"
+        assert ctx.profile.property_type == "house"

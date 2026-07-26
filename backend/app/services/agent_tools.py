@@ -132,7 +132,32 @@ _PERFILAR_CLIENTE_DECLARATION: dict[str, Any] = {
 }
 
 
+def _apply_enriched_field(profile: ProfileData, campo: str, valor: str) -> None:
+    """Traduce un campo enriquecido (whitelist de `EnrichmentService`) a una
+    señal del `ProfileData`, mutando `profile` in place.
+
+    Mapeo compartido entre `_enriquecer_perfil` (dato declarado en el turno
+    actual) y `_perfilar_cliente` (memoria cross-sesión por serie), para no
+    duplicar la lógica de traducción.
+    """
+    if campo == "hijos":
+        n = int(valor)
+        profile.children_count = n
+        profile.has_children = n >= 1
+    elif campo == "vehiculo":
+        profile.has_vehicle = valor == "si"
+    elif campo == "credito":
+        profile.has_credit = valor == "si"
+    elif campo == "tipo_vivienda":
+        profile.property_type = valor
+
+
 def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    """Resuelve el perfil del cliente combinando tres fuentes, en orden de
+    prioridad: lo declarado AHORA en `args` (no-None) > lo enriquecido
+    previamente para esa serie/sesión (`EnrichmentService.fields_for`) > la
+    base resuelta por `AffiliateService` (real o sintética).
+    """
     document_number = args.get("document_number")
     if document_number:
         ctx.document_number = document_number
@@ -171,8 +196,29 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         document_number, declared if has_declared_data else None
     )
 
+    enriched: dict[str, str] = {}
+    if document_number:
+        try:
+            enriched = EnrichmentService().fields_for(
+                ctx.session_id, serie=document_number
+            )
+        except Exception:  # noqa: BLE001 - BD indisponible no rompe el perfilado
+            enriched = {}
+
+    enriched_profile = ProfileData()
+    for campo, valor in enriched.items():
+        _apply_enriched_field(enriched_profile, campo, valor)
+
     profile = ProfileData(
-        property_type=resolved.property_type,
+        property_type=(
+            declared.property_type
+            if declared.property_type is not None
+            else (
+                enriched_profile.property_type
+                if enriched_profile.property_type is not None
+                else resolved.property_type
+            )
+        ),
         zone=resolved.zone,
         stratum=resolved.stratum,
         age_range=resolved.age_range,
@@ -180,17 +226,34 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         has_children=(
             declared.has_children
             if declared.has_children is not None
-            else getattr(resolved, "has_children", None)
+            else (
+                enriched_profile.has_children
+                if enriched_profile.has_children is not None
+                else getattr(resolved, "has_children", None)
+            )
+        ),
+        children_count=(
+            enriched_profile.children_count
+            if enriched_profile.children_count is not None
+            else getattr(resolved, "children_count", None)
         ),
         has_vehicle=(
             declared.has_vehicle
             if declared.has_vehicle is not None
-            else getattr(resolved, "has_vehicle", None)
+            else (
+                enriched_profile.has_vehicle
+                if enriched_profile.has_vehicle is not None
+                else getattr(resolved, "has_vehicle", None)
+            )
         ),
         has_credit=(
             declared.has_credit
             if declared.has_credit is not None
-            else getattr(resolved, "has_credit", None)
+            else (
+                enriched_profile.has_credit
+                if enriched_profile.has_credit is not None
+                else getattr(resolved, "has_credit", None)
+            )
         ),
     )
     ctx.profile = profile
@@ -479,18 +542,7 @@ def _enriquecer_perfil(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]
         return {"error": "dato no válido", "detail": str(exc)}
 
     profile = ctx.profile or ProfileData()
-
-    if campo == "hijos":
-        n = int(normalizado)
-        profile.children_count = n
-        profile.has_children = n >= 1
-    elif campo == "vehiculo":
-        profile.has_vehicle = normalizado == "si"
-    elif campo == "credito":
-        profile.has_credit = normalizado == "si"
-    elif campo == "tipo_vivienda":
-        profile.property_type = normalizado
-
+    _apply_enriched_field(profile, campo, normalizado)
     ctx.profile = profile
 
     return {

@@ -51,6 +51,29 @@ tablas `conversaciones`, `solicitudes`, `sesiones_canal` y `eventos_procesados`
   de compatibilidad en cada módulo de tests); el shape SQL es compatible con
   Postgres.
 
+## Perfil enriquecido (A4)
+
+Todo dato personal que el cliente declara en conversación (hijos —con número—,
+mascota, vehículo, crédito, hábito de fumar, ocupación, tipo de vivienda) se
+captura con la tool **`enriquecer_perfil`** y se persiste en la tabla
+**`perfil_enriquecido`** (EAV: `session_id`, `serie` opcional, `campo`, `valor`,
+`created_at` — última escritura gana por campo).
+
+- **Whitelist cerrada** (sin ontología abierta, campos de la Matriz de
+  Perfilamiento): `hijos` (entero ≥0) · `mascota` (perro|gato|otro|ninguna) ·
+  `vehiculo`/`credito`/`fumador` (si|no) · `ocupacion` (texto ≤80) ·
+  `tipo_vivienda` (house|apartment). La validación vive en un único punto:
+  `EnrichmentService` (`app/services/enrichment.py`).
+- **Alimenta al motor en el mismo flujo**: `hijos` → `has_children` +
+  `children_count` (la razón de Vida cita "2 hijos declarados"), `vehiculo` →
+  `has_vehicle`, `credito` → `has_credit`, `tipo_vivienda` → `property_type`.
+  `mascota`/`fumador`/`ocupacion` se persisten sin puntuar (señales futuras).
+- **Memoria cross-sesión**: si el cliente se identificó (SERIE), lo enriquecido
+  queda ligado a su serie y `perfilar_cliente` lo recupera en cualquier sesión o
+  canal posterior. Prioridad de fusión: **declarado ahora > enriquecido previo >
+  base real/sintética**.
+- G3/panel pueden consultar la tabla directamente ("qué sabemos de esta SERIE").
+
 ## Base de afiliados y columnas sintéticas (C2)
 
 La base anonimizada de afiliados vive en la tabla **`afiliados`** (PK `serie`, el
