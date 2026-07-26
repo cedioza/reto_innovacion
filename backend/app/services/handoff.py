@@ -13,6 +13,10 @@ from app.schemas.conversation import ConsentedApplication
 
 INSURER_BY_PRODUCT: dict[str, str] = {
     "hogar-estandar": "Seguros Bolívar",
+    "accidentes-personales": "Seguros Sura",
+    "vida-basico": "Seguros Bolívar",
+    "movilidad-auto": "Mapfre",
+    "credito-vida-deudor": "Aseguradora Solidaria",
 }
 
 _INSURER_FALLBACK = "la aseguradora aliada"

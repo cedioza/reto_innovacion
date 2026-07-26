@@ -5,7 +5,7 @@ from app.models.product import Adjustment
 
 
 class QuoteService:
-    """Deterministic quote engine for Hogar insurance.
+    """Deterministic quote engine for any product in the catalog.
 
     The quote is calculated from a fixed product catalog and the
     user's declared profile. Every call with the same inputs produces
@@ -19,8 +19,9 @@ class QuoteService:
         self,
         profile: ProfileData,
         selected_adjustments: list[str] | None = None,
+        product_id: str = "hogar-estandar",
     ) -> dict:
-        product = self._catalog.get_product("hogar-estandar")
+        product = self._catalog.get_product(product_id)
         if not product:
             raise ValueError("Product not found")
 

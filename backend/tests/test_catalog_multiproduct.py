@@ -11,6 +11,9 @@ from __future__ import annotations
 import pytest
 
 from app.repositories.catalog import CatalogRepository
+from app.schemas.conversation import ProfileData
+from app.services import handoff
+from app.services.quote import QuoteService
 
 EXPECTED_PRODUCT_IDS = {
     "hogar-estandar",
@@ -114,3 +117,105 @@ class TestCatalogAnnualBasePriceById:
         product = CatalogRepository().get_product(product_id)
         assert product is not None, f"missing product: {product_id}"
         assert product.base_price == expected_base_price
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — QuoteService y handoff ganan soporte multi-producto (RED phase).
+#
+# `QuoteService.calculate_quote` hoy hardcodea "hogar-estandar" y no acepta
+# `product_id`; estos tests deben fallar por
+# `TypeError: calculate_quote() got an unexpected keyword argument
+# 'product_id'` hasta que la implementación agregue ese parámetro.
+# `INSURER_BY_PRODUCT` hoy solo mapea "hogar-estandar"; los tests de
+# aseguradora para los 4 productos nuevos deben fallar por AssertionError
+# (caen al fallback "la aseguradora aliada") hasta que se agreguen los ids.
+# ---------------------------------------------------------------------------
+
+
+EXPECTED_MONTHLY_PREMIUM_NEUTRAL_BY_ID = {
+    "hogar-estandar": 3_750.0,
+    "accidentes-personales": 5_000.0,
+    "vida-basico": 15_000.0,
+    "movilidad-auto": 120_000.0,
+    "credito-vida-deudor": 25_000.0,
+}
+
+
+class TestQuoteServiceMultiProduct:
+    """Criterio 1 del vault: `calculate_quote` cotiza cualquiera de los 5
+    productos del catálogo, no solo "hogar-estandar", vía `product_id`."""
+
+    @pytest.mark.parametrize(
+        ("product_id", "expected_monthly"),
+        list(EXPECTED_MONTHLY_PREMIUM_NEUTRAL_BY_ID.items()),
+    )
+    def test_calculate_quote_with_neutral_profile_matches_expected_monthly(
+        self, product_id: str, expected_monthly: float
+    ) -> None:
+        profile = ProfileData(age_range="36-45")
+
+        result = QuoteService().calculate_quote(profile, product_id=product_id)
+
+        assert result["monthly_premium"] > 0
+        assert result["monthly_premium"] == expected_monthly
+
+    def test_age_risk_factor_applies_to_any_product(self) -> None:
+        """Comportamiento actual del motor (factor de edad global 1.15 para
+        18-25/65+, documentado hasta B4): se verifica con vida-basico."""
+        profile = ProfileData(age_range="18-25")
+
+        result = QuoteService().calculate_quote(profile, product_id="vida-basico")
+
+        assert result["monthly_premium"] == 17_250.0
+
+    def test_product_own_adjustment_is_applied(self) -> None:
+        profile = ProfileData(age_range="36-45")
+
+        result = QuoteService().calculate_quote(
+            profile, ["low_mileage"], product_id="movilidad-auto"
+        )
+
+        assert result["monthly_premium"] == 108_000.0
+        adjustment_codes = [a["code"] for a in result["adjustments"]]
+        assert "low_mileage" in adjustment_codes
+
+    def test_foreign_adjustment_is_silently_ignored(self) -> None:
+        """Comportamiento actual: un código de ajuste que no pertenece al
+        producto cotizado no aplica y no lanza error."""
+        profile = ProfileData(age_range="36-45")
+
+        result = QuoteService().calculate_quote(
+            profile, ["fire_alarm"], product_id="vida-basico"
+        )
+
+        assert result["monthly_premium"] == 15_000.0
+        assert result["adjustments"] == []
+
+    def test_calculate_quote_with_unknown_product_raises_value_error(self) -> None:
+        profile = ProfileData(age_range="36-45")
+
+        with pytest.raises(ValueError, match="Product not found"):
+            QuoteService().calculate_quote(profile, product_id="no-existe")
+
+
+class TestInsurerForNewProducts:
+    """Criterio del vault: `INSURER_BY_PRODUCT` cubre los 4 productos nuevos;
+    el fallback a "la aseguradora aliada" para ids desconocidos sigue
+    intacto (caracterización, no duplica test_handoff.py)."""
+
+    @pytest.mark.parametrize(
+        ("product_id", "expected_insurer"),
+        [
+            ("accidentes-personales", "Seguros Sura"),
+            ("vida-basico", "Seguros Bolívar"),
+            ("movilidad-auto", "Mapfre"),
+            ("credito-vida-deudor", "Aseguradora Solidaria"),
+        ],
+    )
+    def test_insurer_for_new_product_ids(
+        self, product_id: str, expected_insurer: str
+    ) -> None:
+        assert handoff.insurer_for(product_id) == expected_insurer
+
+    def test_insurer_for_unmapped_product_still_falls_back(self) -> None:
+        assert handoff.insurer_for("producto-x") == "la aseguradora aliada"
