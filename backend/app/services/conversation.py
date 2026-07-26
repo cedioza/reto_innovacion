@@ -24,7 +24,7 @@ from app.services.propensity import PropensityService
 from app.services.quote import QuoteService
 from app.services.affiliate import AffiliateService
 from app.services.catalog import CatalogService
-from app.services.consent import ConsentService
+from app.services.consent import consent_service
 from app.repositories.conversations import ConversationRepository
 
 
@@ -36,7 +36,7 @@ class ConversationService:
         self._quote = QuoteService()
         self._affiliates = AffiliateService()
         self._catalog = CatalogService()
-        self._consent = ConsentService()
+        self._consent = consent_service
         self._repo = ConversationRepository()
 
     # -- public API -----------------------------------------------------------

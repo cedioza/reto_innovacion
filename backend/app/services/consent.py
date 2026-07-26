@@ -105,3 +105,33 @@ class ConsentService:
         self, session_id: str
     ) -> ConsentedApplication | None:
         return self._repo.find(session_id)
+
+    def get_application_by_token(
+        self, token: str
+    ) -> ConsentedApplication | None:
+        return self._repo.find_by_token(token)
+
+    def finalize_by_token(self, token: str) -> ConsentedApplication:
+        """Marca la solicitud como `finalizada_demo` (idempotente).
+
+        Busca la aplicación por `handoff_token` y, si existe, actualiza su
+        estado a `ConversationState.FINALIZED_DEMO`, re-persistiendo con el
+        mismo `evidence_hash` original (no se recalcula: el hash es evidencia
+        de lo consentido, no del estado de la demo).
+        """
+        application = self._repo.find_by_token(token)
+        if application is None:
+            raise ValueError("Handoff not found")
+
+        application.state = ConversationState.FINALIZED_DEMO
+        evidence_hash = self._repo.get_evidence_hash(application.session_id)
+        self._repo.save(application.session_id, evidence_hash, application)
+
+        return application
+
+
+# Instancia compartida de módulo: el camino REST (`conversation_service`) y el
+# camino tool (`agent_tools._cerrar_venta`) deben resolver el mismo
+# `handoff_token` contra el mismo `ApplicationRepository` en memoria, mismo
+# patrón que `conversation_service`.
+consent_service = ConsentService()
