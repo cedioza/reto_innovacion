@@ -31,6 +31,9 @@ class ProfileData(BaseModel):
     stratum: Optional[int] = None
     age_range: Optional[str] = None
     has_family: Optional[bool] = None
+    has_children: Optional[bool] = None
+    has_vehicle: Optional[bool] = None
+    has_credit: Optional[bool] = None
 
 
 class Recommendation(BaseModel):

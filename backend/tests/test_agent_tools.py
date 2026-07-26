@@ -174,6 +174,78 @@ class TestPerfilarClienteMinimalDefault:
         json.dumps(result)
 
 
+class TestPerfilarClienteSenalesDeclaradas:
+    """Señales adicionales (has_children/has_vehicle/has_credit) declaradas
+    por el usuario en la conversación, sin depender de la base de afiliados.
+    """
+
+    def test_declaracion_incluye_senales_nuevas(self) -> None:
+        declarations = tool_declarations()
+        perfilar = next(
+            decl for decl in declarations if decl["name"] == "perfilar_cliente"
+        )
+        properties = perfilar["parameters"]["properties"]
+
+        for campo in ("has_children", "has_vehicle", "has_credit"):
+            assert campo in properties
+            assert properties[campo]["type"] == "boolean"
+
+    def test_captura_vehiculo_declarado(self) -> None:
+        ctx = ToolContext()
+
+        result = execute_tool(
+            "perfilar_cliente", {"has_vehicle": True}, ctx
+        )
+
+        assert ctx.profile.has_vehicle is True
+        assert result["profile"]["has_vehicle"] is True
+        assert result["fuente"] == "declarado"
+
+    def test_solo_senal_nueva_cuenta_como_dato_declarado(self) -> None:
+        ctx = ToolContext()
+
+        result = execute_tool(
+            "perfilar_cliente", {"has_credit": True}, ctx
+        )
+
+        assert ctx.profile.has_credit is True
+        assert result["profile"]["has_credit"] is True
+
+    def test_senales_ausentes_quedan_none(self) -> None:
+        ctx = ToolContext()
+
+        execute_tool(
+            "perfilar_cliente", {"property_type": "house"}, ctx
+        )
+
+        assert ctx.profile.has_children is None
+        assert ctx.profile.has_vehicle is None
+        assert ctx.profile.has_credit is None
+
+    def test_resultado_json_safe_con_senales(self) -> None:
+        ctx = ToolContext()
+
+        result = execute_tool(
+            "perfilar_cliente",
+            {"has_children": True, "has_vehicle": True, "has_credit": True},
+            ctx,
+        )
+
+        json.dumps(result)
+
+    def test_captura_hijos_declarados(self) -> None:
+        ctx = ToolContext()
+
+        execute_tool(
+            "perfilar_cliente",
+            {"has_children": True, "has_family": True},
+            ctx,
+        )
+
+        assert ctx.profile.has_children is True
+        assert ctx.profile.has_family is True
+
+
 class TestExecuteToolUnknownName:
     def test_unknown_tool_returns_error_dict_without_raising(self) -> None:
         ctx = ToolContext()
@@ -561,3 +633,91 @@ class TestFunnelEndToEndSinLLM:
             assert "error" not in result
 
         assert cerrar_result["state"] == "ready_for_payment"
+
+
+# --- Fase 3 (B3): coherencia del funnel multicategoría -----------------------
+#
+# TDD-light, RED antes de implementar: el motor de propensión (B3) ya
+# recomienda entre 5 categorías (`PropensityService.evaluate`), pero
+# `_cotizar`/`_ajustar_comparar` de `agent_tools.py` todavía cotizan/ajustan
+# siempre contra "hogar-estandar", sin mirar `ctx.recommendation`. Estos
+# tests describen el comportamiento objetivo tras la Fase 3 — el funnel debe
+# cotizar, listar ajustes y cerrar la venta sobre el producto que el motor
+# recomendó, con fallback a "hogar-estandar" cuando se cotiza sin recomendar
+# antes. Fallan hoy por la razón correcta (el código de producción aún no
+# resuelve el product_id del contexto).
+
+MOVILIDAD_PROFILE = ProfileData(age_range="26-40", has_vehicle=True)
+CREDITO_PROFILE = ProfileData(age_range="41-55", has_credit=True)
+HOGAR_DIRECTO_PROFILE = ProfileData(
+    property_type="house", zone="urban", stratum=3, age_range="26-40"
+)
+
+
+class TestFunnelCoherenteMulticategoria:
+    def test_cotizar_usa_producto_recomendado(self) -> None:
+        ctx = ToolContext(session_id="s-movilidad")
+        ctx.profile = MOVILIDAD_PROFILE.model_copy()
+
+        recomendar_result = execute_tool("recomendar_seguro", {}, ctx)
+        assert recomendar_result["product_id"] == "movilidad-auto"
+
+        result = execute_tool("cotizar", {}, ctx)
+
+        assert result["product_id"] == "movilidad-auto"
+        assert result["monthly_premium"] == 120000.0
+
+    def test_cotizar_sin_recomendacion_cae_a_hogar(self) -> None:
+        ctx = ToolContext(session_id="s-hogar-directo")
+        ctx.profile = HOGAR_DIRECTO_PROFILE.model_copy()
+        assert ctx.recommendation is None
+
+        result = execute_tool("cotizar", {}, ctx)
+
+        assert "error" not in result
+        assert result["product_id"] == "hogar-estandar"
+        assert result["monthly_premium"] == 3750.0
+
+    def test_ajustar_comparar_lista_ajustes_del_producto_recomendado(
+        self,
+    ) -> None:
+        ctx = ToolContext(session_id="s-movilidad-ajustes")
+        ctx.profile = MOVILIDAD_PROFILE.model_copy()
+        execute_tool("recomendar_seguro", {}, ctx)
+        execute_tool("cotizar", {}, ctx)
+
+        result = execute_tool("ajustar_comparar", {"adjustments": []}, ctx)
+
+        product = CatalogService().get_product("movilidad-auto")
+        assert product is not None
+        expected_codes = {adj.code for adj in product.adjustments}
+
+        result_codes = {
+            item["code"] for item in result["ajustes_disponibles"]
+        }
+        assert result_codes == expected_codes
+        assert "fire_alarm" not in result_codes
+
+    def test_cerrar_venta_cierra_con_producto_recomendado(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(
+            resend_client, "send_email", lambda *a, **k: {"ok": True, "id": "x"}
+        )
+        ctx = ToolContext(session_id="s-credito")
+        ctx.profile = CREDITO_PROFILE.model_copy()
+
+        recomendar_result = execute_tool("recomendar_seguro", {}, ctx)
+        assert recomendar_result["product_id"] == "credito-vida-deudor"
+        execute_tool("cotizar", {}, ctx)
+
+        result = execute_tool(
+            "cerrar_venta",
+            {"consentimiento": True, "email": "x@y.co"},
+            ctx,
+        )
+
+        assert result["product_id"] == "credito-vida-deudor"
+        assert (
+            result["recommendation"]["product_name"] == "Crédito Vida Deudor"
+        )

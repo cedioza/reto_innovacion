@@ -57,9 +57,20 @@ class TestPropensityService:
             assert "evidence" in reason
 
     def test_young_age_reduces_score(self) -> None:
+        """Top-level score is now the winner's (may not be hogar for a young
+        profile), so this compares the "hogar" entry inside each ranking."""
         adult = self._profile(age_range="26-40")
         young = self._profile(age_range="18-25")
-        assert self.service.evaluate(adult)["score"] > self.service.evaluate(young)["score"]
+
+        def _hogar_score(profile: ProfileData) -> float:
+            result = self.service.evaluate(profile)
+            return next(
+                entry["score"]
+                for entry in result["ranking"]
+                if entry["category"] == "hogar"
+            )
+
+        assert _hogar_score(adult) > _hogar_score(young)
 
     def test_score_never_exceeds_1(self) -> None:
         p = self._profile(stratum=4, zone="urban", property_type="house", age_range="41-55")

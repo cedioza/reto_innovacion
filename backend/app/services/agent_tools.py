@@ -72,9 +72,10 @@ _PERFILAR_CLIENTE_DECLARATION: dict[str, Any] = {
     "description": (
         "Busca al cliente en la base de afiliados por su número de documento. "
         "Si el documento no existe en la base (o no se entrega), construye su "
-        "perfil con los datos que el cliente haya declarado en la "
-        "conversación sobre su hogar (tipo de propiedad, zona, estrato, rango "
-        "de edad, si tiene familia). Devuelve si es afiliado, la fuente del "
+        "perfil con lo que el cliente haya declarado en la conversación "
+        "(hogar: tipo de propiedad, zona, estrato, rango de edad, si tiene "
+        "familia; y otras señales: si tiene hijos, si tiene vehículo, si "
+        "tiene un crédito vigente). Devuelve si es afiliado, la fuente del "
         "perfil ('base' o 'declarado') y el perfil resuelto."
     ),
     "parameters": {
@@ -106,6 +107,24 @@ _PERFILAR_CLIENTE_DECLARATION: dict[str, Any] = {
                 "type": "boolean",
                 "description": "Si el cliente declara tener familia a cargo.",
             },
+            "has_children": {
+                "type": "boolean",
+                "description": (
+                    "Si el cliente declara tener hijos o dependientes a "
+                    "cargo."
+                ),
+            },
+            "has_vehicle": {
+                "type": "boolean",
+                "description": "Si el cliente declara tener carro o moto propios.",
+            },
+            "has_credit": {
+                "type": "boolean",
+                "description": (
+                    "Si el cliente declara tener un crédito vigente "
+                    "(hipotecario, libre inversión, etc.)."
+                ),
+            },
         },
     },
 }
@@ -119,6 +138,9 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         stratum=args.get("stratum"),
         age_range=args.get("age_range"),
         has_family=args.get("has_family"),
+        has_children=args.get("has_children"),
+        has_vehicle=args.get("has_vehicle"),
+        has_credit=args.get("has_credit"),
     )
     has_declared_data = any(
         value is not None
@@ -128,6 +150,9 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
             declared.stratum,
             declared.age_range,
             declared.has_family,
+            declared.has_children,
+            declared.has_vehicle,
+            declared.has_credit,
         )
     )
 
@@ -148,6 +173,9 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         stratum=resolved.stratum,
         age_range=resolved.age_range,
         has_family=declared.has_family,
+        has_children=declared.has_children,
+        has_vehicle=declared.has_vehicle,
+        has_credit=declared.has_credit,
     )
     ctx.profile = profile
 
@@ -198,7 +226,8 @@ def _recomendar_seguro(
 _COTIZAR_DECLARATION: dict[str, Any] = {
     "name": "cotizar",
     "description": (
-        "Calcula la prima del seguro de hogar con el motor determinista de "
+        "Calcula la prima del producto recomendado por el motor de "
+        "propensión (recomendar_seguro) con el motor determinista de "
         "tarifas del catálogo, a partir del perfil del cliente ya obtenido "
         "con perfilar_cliente. El precio siempre sale del motor, nunca se "
         "inventa."
@@ -220,10 +249,13 @@ def _cotizar(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     if ctx.profile is None:
         return _sin_perfil_error()
 
+    product_id = (ctx.recommendation or {}).get("product_id", "hogar-estandar")
     adjustments = args.get("adjustments") or []
-    result = QuoteService().calculate_quote(ctx.profile, adjustments)
+    result = QuoteService().calculate_quote(
+        ctx.profile, adjustments, product_id=product_id
+    )
     ctx.quote = result
-    return {**result, "product_id": "hogar-estandar"}
+    return {**result, "product_id": product_id}
 
 
 # -- ajustar_comparar --------------------------------------------------------
@@ -275,14 +307,17 @@ def _ajustar_comparar(
         return _sin_cotizacion_error()
 
     actual = ctx.quote
+    product_id = (ctx.recommendation or {}).get("product_id", "hogar-estandar")
     adjustments = args.get("adjustments") or []
-    propuesta = QuoteService().calculate_quote(ctx.profile, adjustments)
+    propuesta = QuoteService().calculate_quote(
+        ctx.profile, adjustments, product_id=product_id
+    )
 
     diferencia_mensual = round(
         propuesta["monthly_premium"] - actual["monthly_premium"], 2
     )
 
-    product = CatalogService().get_product("hogar-estandar")
+    product = CatalogService().get_product(product_id)
     ajustes_disponibles = [
         {"code": adj.code, "name": adj.name, "description": adj.description}
         for adj in (product.adjustments if product else [])
