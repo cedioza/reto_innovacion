@@ -1,5 +1,8 @@
 import re
 
+from sqlalchemy import Engine
+
+from app.repositories.channel_sessions import ChannelSessionRepository
 from app.schemas.conversation import (
     ConversationCreate,
     ConversationState,
@@ -71,28 +74,34 @@ READY_TEXT = (
 
 
 class ChannelHandler:
-    def __init__(self, service: ConversationService | None = None) -> None:
+    def __init__(
+        self,
+        service: ConversationService | None = None,
+        engine: Engine | None = None,
+    ) -> None:
         self._service = service or conversation_service
-        self._sessions: dict[str, str] = {}
+        self._sessions_repo = ChannelSessionRepository(engine=engine)
+        # `_pending_field` se queda en memoria: es estado efímero de UX (qué
+        # campo del perfil se está pidiendo); su pérdida en un redeploy es
+        # inocua, el usuario simplemente vuelve a ver el prompt del perfil.
         self._pending_field: dict[str, str | None] = {}
 
     def handle_incoming(self, channel: str, user_id: str, text: str) -> str:
         text_clean = text.strip().lower()
 
-        session_id = self._sessions.get(user_id)
+        session_id = self._sessions_repo.find(channel, user_id)
 
         if session_id is None:
             session = self._service.create(ConversationCreate())
-            self._sessions[user_id] = session.session_id
+            self._sessions_repo.save(channel, user_id, session.session_id)
             self._pending_field[session.session_id] = "profile"
             return f"{WELCOME_TEXT}\n\n{PROFILE_PROMPT}"
 
         session = self._service.get(session_id)
         if session is None:
-            self._sessions.pop(user_id, None)
             self._pending_field.pop(session_id, None)
             new_session = self._service.create(ConversationCreate())
-            self._sessions[user_id] = new_session.session_id
+            self._sessions_repo.save(channel, user_id, new_session.session_id)
             self._pending_field[new_session.session_id] = "profile"
             return f"{WELCOME_TEXT}\n\n{PROFILE_PROMPT}"
 
@@ -111,6 +120,15 @@ class ChannelHandler:
             return READY_TEXT
 
         return PROFILE_PROMPT
+
+    def was_event_processed(self, event_id: str) -> bool:
+        """Expone la deduplicación de eventos de webhook al router (que no
+        puede tocar un repository directamente, ver reglas de capas)."""
+        return self._sessions_repo.is_event_processed(event_id)
+
+    def mark_event_processed(self, event_id: str) -> bool:
+        """Ídem, para marcar un evento como procesado tras entrega exitosa."""
+        return self._sessions_repo.mark_event_processed(event_id)
 
     def _handle_collecting_profile(
         self, session_id: str, text_clean: str, session

@@ -33,7 +33,7 @@ class TestSharedConversationState:
         handler = ChannelHandler()
         handler.handle_incoming("whatsapp", "user-shared-state-test", "hola")
 
-        session_id = handler._sessions["user-shared-state-test"]
+        session_id = handler._sessions_repo.find("whatsapp", "user-shared-state-test")
 
         resp = client.get(f"/api/v1/conversations/{session_id}")
         assert resp.status_code == 200

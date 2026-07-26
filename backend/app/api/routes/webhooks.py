@@ -14,8 +14,6 @@ from app.services.whatsapp_provider import send_whatsapp_message
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 _handler = ChannelHandler()
-# Instance-local deduplication; Postgres will provide cross-restart idempotency in stage two.
-_processed_ycloud_events: set[str] = set()
 
 
 @router.get("/whatsapp")
@@ -121,7 +119,7 @@ async def receive_ycloud_whatsapp(request: Request):
             return {"status": "ignored"}
 
         event_id = payload.get("id")
-        if event_id and event_id in _processed_ycloud_events:
+        if event_id and await run_in_threadpool(_handler.was_event_processed, event_id):
             return {"status": "ok"}
 
         message = payload.get("whatsappInboundMessage", {})
@@ -133,7 +131,7 @@ async def receive_ycloud_whatsapp(request: Request):
             if not sent:
                 raise RuntimeError("message delivery failed")
             if event_id:
-                _processed_ycloud_events.add(event_id)
+                await run_in_threadpool(_handler.mark_event_processed, event_id)
     except Exception:
         return JSONResponse({"detail": "Webhook processing failed"}, status_code=502)
 
