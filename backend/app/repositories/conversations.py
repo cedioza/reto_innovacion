@@ -19,6 +19,7 @@ importar este módulo o instanciar el repositorio, p. ej. en tests.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import Engine, func
@@ -27,6 +28,8 @@ from sqlmodel import Session, select
 from app.models.conversation import ConversationRecord
 from app.repositories import db
 from app.schemas.conversation import ConversationResponse
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationRepository:
@@ -77,3 +80,24 @@ class ConversationRepository:
         with Session(self._resolve_engine()) as db_session:
             statement = select(func.count()).select_from(ConversationRecord)
             return db_session.exec(statement).one()
+
+    def list_all(self) -> list[ConversationResponse]:
+        """Todas las conversaciones válidas, para el panel de métricas.
+
+        Filas con `data` corrupto (no valida contra `ConversationResponse`)
+        se loguean con `logger.warning` y se saltan: nunca se lanza por datos
+        malos de una sola fila.
+        """
+        conversations: list[ConversationResponse] = []
+        with Session(self._resolve_engine()) as db_session:
+            records = db_session.exec(select(ConversationRecord)).all()
+
+        for record in records:
+            try:
+                conversations.append(ConversationResponse.model_validate(record.data))
+            except Exception:
+                logger.warning(
+                    "Fila de conversación corrupta, se salta: session_id=%s",
+                    record.session_id,
+                )
+        return conversations

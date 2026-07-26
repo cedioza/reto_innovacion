@@ -6,7 +6,13 @@ validated by CohortsResponse. No business logic here.
 
 from fastapi import APIRouter, HTTPException
 
-from app.schemas.panel import CohortsResponse, TriggerRequest, TriggerResponse
+from app.schemas.panel import (
+    CohortsResponse,
+    MetricasResponse,
+    TriggerRequest,
+    TriggerResponse,
+)
+from app.services.panel_metrics import PanelMetricsService
 from app.services.proactive import ProactiveService
 
 router = APIRouter(prefix="/panel", tags=["panel"])
@@ -15,6 +21,11 @@ router = APIRouter(prefix="/panel", tags=["panel"])
 @router.get("/cohortes", response_model=CohortsResponse)
 async def get_cohortes():
     return ProactiveService().list_cohorts()
+
+
+@router.get("/metricas", response_model=MetricasResponse)
+async def get_metricas():
+    return PanelMetricsService().metricas()
 
 
 @router.post(
