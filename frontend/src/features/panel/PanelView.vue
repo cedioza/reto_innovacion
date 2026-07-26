@@ -1,15 +1,26 @@
 <script setup>
-// Panel del disparador proactivo: muestra cohortes de afiliados con un
-// producto recomendado y permite simular el envío de una oferta proactiva
-// que abre el chat en la sesión recién creada por el backend.
+// Panel de negocio: pestaña "Cohortes" (disparador proactivo) y pestaña
+// "Clientes" (buscador + tabla de clientes del funnel).
+import { ref } from 'vue'
 import { usePanel } from './composables/usePanel'
 import CohortCard from './components/CohortCard.vue'
+import ClientesTab from './components/ClientesTab.vue'
 
 const { cohortes, fuente, isLoading, error, disparandoSerie, errorDisparo, reintentar, disparar } =
   usePanel()
 
 function handleDisparar(cohorteId, serie) {
   disparar(cohorteId, serie)
+}
+
+const tabs = [
+  { id: 'cohortes', label: 'Cohortes' },
+  { id: 'clientes', label: 'Clientes' },
+]
+const tabActiva = ref('cohortes')
+
+function handleVerCliente() {
+  // La Fase 5 conectará este evento con el drawer de detalle.
 }
 </script>
 
@@ -20,32 +31,49 @@ function handleDisparar(cohorteId, serie) {
       <p class="pitch">El seguro correcto, en el momento correcto, por el canal correcto.</p>
     </header>
 
-    <p v-if="isLoading" class="state-text">Cargando cohortes…</p>
+    <nav class="tabs">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        type="button"
+        class="tab-btn"
+        :class="{ active: tabActiva === tab.id }"
+        @click="tabActiva = tab.id"
+      >
+        {{ tab.label }}
+      </button>
+    </nav>
 
-    <div v-else-if="error" class="state-card">
-      <p class="state-text">{{ error }}</p>
-      <button type="button" class="retry-btn" @click="reintentar">Reintentar</button>
-    </div>
+    <div v-if="tabActiva === 'cohortes'">
+      <p v-if="isLoading" class="state-text">Cargando cohortes…</p>
 
-    <div v-else>
-      <p v-if="fuente === 'sin_datos'" class="empty-banner">
-        La base de afiliados está vacía — carga el dataset con cargar_afiliados.py
-      </p>
-
-      <p v-if="errorDisparo" class="disparo-error">{{ errorDisparo }}</p>
-
-      <div v-if="cohortes.length" class="cohortes-list">
-        <CohortCard
-          v-for="cohorte in cohortes"
-          :key="cohorte.id"
-          :cohorte="cohorte"
-          :disparando-serie="disparandoSerie"
-          @disparar="(serie) => handleDisparar(cohorte.id, serie)"
-        />
+      <div v-else-if="error" class="state-card">
+        <p class="state-text">{{ error }}</p>
+        <button type="button" class="retry-btn" @click="reintentar">Reintentar</button>
       </div>
 
-      <p v-else-if="fuente !== 'sin_datos'" class="state-text">No hay cohortes disponibles.</p>
+      <div v-else>
+        <p v-if="fuente === 'sin_datos'" class="empty-banner">
+          La base de afiliados está vacía — carga el dataset con cargar_afiliados.py
+        </p>
+
+        <p v-if="errorDisparo" class="disparo-error">{{ errorDisparo }}</p>
+
+        <div v-if="cohortes.length" class="cohortes-list">
+          <CohortCard
+            v-for="cohorte in cohortes"
+            :key="cohorte.id"
+            :cohorte="cohorte"
+            :disparando-serie="disparandoSerie"
+            @disparar="(serie) => handleDisparar(cohorte.id, serie)"
+          />
+        </div>
+
+        <p v-else-if="fuente !== 'sin_datos'" class="state-text">No hay cohortes disponibles.</p>
+      </div>
     </div>
+
+    <ClientesTab v-else-if="tabActiva === 'clientes'" @ver-cliente="handleVerCliente" />
   </section>
 </template>
 
@@ -75,6 +103,28 @@ function handleDisparar(cohorteId, serie) {
   font-size: 0.9rem;
   color: var(--chat-green-dark);
   font-weight: 600;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--chat-border);
+}
+
+.tab-btn {
+  padding: 0.55rem 1.1rem;
+  border: none;
+  background: transparent;
+  color: var(--chat-text-muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-btn.active {
+  color: var(--chat-green-dark);
+  border-bottom-color: var(--chat-green);
 }
 
 .state-text {

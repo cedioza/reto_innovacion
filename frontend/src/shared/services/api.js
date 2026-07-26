@@ -83,3 +83,11 @@ export function getPanelCohortes() {
 export function dispararOferta(cohorteId, serie) {
   return api.post(`/api/v1/panel/cohortes/${cohorteId}/disparar`, { serie })
 }
+
+export function getPanelClientes(q) {
+  return api.get('/api/v1/panel/clientes' + (q ? '?q=' + encodeURIComponent(q) : ''))
+}
+
+export function getPanelCliente(clienteId) {
+  return api.get(`/api/v1/panel/clientes/${encodeURIComponent(clienteId)}`)
+}
