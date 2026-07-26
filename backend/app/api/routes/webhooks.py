@@ -11,12 +11,14 @@ from app.core.config import settings
 from app.services import channel_gateway
 from app.services.channel_handler import ChannelHandler
 from app.services.channels.meta_whatsapp import MetaWhatsAppAdapter
-from app.services.telegram_client import send_telegram_message, set_telegram_webhook
+from app.services.channels.telegram import TelegramAdapter
+from app.services.telegram_client import set_telegram_webhook
 from app.services.whatsapp_provider import send_whatsapp_message
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 _handler = ChannelHandler()
 _meta_adapter = MetaWhatsAppAdapter()
+_telegram_adapter = TelegramAdapter()
 
 
 @router.get("/whatsapp")
@@ -128,14 +130,14 @@ async def receive_telegram(request: Request, payload: dict):
             return JSONResponse({"detail": "Invalid secret token"}, status_code=401)
 
     try:
-        message = payload.get("message", {})
-        chat = message.get("chat", {})
-        chat_id = chat.get("id") or message.get("from", {}).get("id")
-        text = message.get("text", "")
+        inbound = _telegram_adapter.parse_incoming(payload)
+        if inbound is None:
+            return {"status": "ok"}
 
-        if chat_id and text:
-            response = _handler.handle_incoming("telegram", str(chat_id), text)
-            send_telegram_message(chat_id, response)
+        response = await run_in_threadpool(
+            channel_gateway.handle, inbound.channel, inbound.user_ref, inbound.text
+        )
+        await run_in_threadpool(_telegram_adapter.deliver, inbound.user_ref, response)
     except Exception:
         pass
 

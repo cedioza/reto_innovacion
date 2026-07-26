@@ -1,4 +1,14 @@
-"""Tests for the Telegram webhook secret token validation."""
+"""Tests for the Telegram webhook secret token validation.
+
+Recableado en el paso 2 del plan F5: el POST `/telegram` ya no pasa por
+`ChannelHandler.handle_incoming` ni por `send_telegram_message` directo, sino
+por `channel_gateway.handle` + `TelegramAdapter.deliver` (ver
+`app/services/channels/telegram.py`). Los mocks apuntan ahora a
+`webhooks.channel_gateway.handle` y a
+`app.services.channels.telegram.send_telegram_message` (el punto de
+parcheo real que usa `TelegramAdapter.deliver`); los asserts de status
+code quedan idénticos.
+"""
 
 from fastapi.testclient import TestClient
 
@@ -23,11 +33,14 @@ def test_telegram_webhook_accepts_valid_secret_header(monkeypatch):
     monkeypatch.setattr(settings, "telegram_webhook_secret", "s3cret")
     handled = []
     monkeypatch.setattr(
-        webhooks._handler,
-        "handle_incoming",
+        webhooks.channel_gateway,
+        "handle",
         lambda channel, chat_id, text: handled.append((channel, chat_id, text)) or "Respuesta",
     )
-    monkeypatch.setattr(webhooks, "send_telegram_message", lambda chat_id, text: True)
+    monkeypatch.setattr(
+        "app.services.channels.telegram.send_telegram_message",
+        lambda chat_id, text, **kwargs: True,
+    )
 
     response = client.post(
         "/api/v1/webhooks/telegram",
@@ -44,11 +57,14 @@ def test_telegram_webhook_rejects_missing_secret_header(monkeypatch):
     monkeypatch.setattr(settings, "telegram_webhook_secret", "s3cret")
     handled = []
     monkeypatch.setattr(
-        webhooks._handler,
-        "handle_incoming",
+        webhooks.channel_gateway,
+        "handle",
         lambda channel, chat_id, text: handled.append((channel, chat_id, text)) or "Respuesta",
     )
-    monkeypatch.setattr(webhooks, "send_telegram_message", lambda chat_id, text: True)
+    monkeypatch.setattr(
+        "app.services.channels.telegram.send_telegram_message",
+        lambda chat_id, text, **kwargs: True,
+    )
 
     response = client.post("/api/v1/webhooks/telegram", json=_telegram_payload())
 
@@ -60,11 +76,14 @@ def test_telegram_webhook_rejects_incorrect_secret_header(monkeypatch):
     monkeypatch.setattr(settings, "telegram_webhook_secret", "s3cret")
     handled = []
     monkeypatch.setattr(
-        webhooks._handler,
-        "handle_incoming",
+        webhooks.channel_gateway,
+        "handle",
         lambda channel, chat_id, text: handled.append((channel, chat_id, text)) or "Respuesta",
     )
-    monkeypatch.setattr(webhooks, "send_telegram_message", lambda chat_id, text: True)
+    monkeypatch.setattr(
+        "app.services.channels.telegram.send_telegram_message",
+        lambda chat_id, text, **kwargs: True,
+    )
 
     response = client.post(
         "/api/v1/webhooks/telegram",
@@ -80,11 +99,14 @@ def test_telegram_webhook_allows_unconfigured_secret_without_header(monkeypatch)
     monkeypatch.setattr(settings, "telegram_webhook_secret", "")
     handled = []
     monkeypatch.setattr(
-        webhooks._handler,
-        "handle_incoming",
+        webhooks.channel_gateway,
+        "handle",
         lambda channel, chat_id, text: handled.append((channel, chat_id, text)) or "Respuesta",
     )
-    monkeypatch.setattr(webhooks, "send_telegram_message", lambda chat_id, text: True)
+    monkeypatch.setattr(
+        "app.services.channels.telegram.send_telegram_message",
+        lambda chat_id, text, **kwargs: True,
+    )
 
     response = client.post("/api/v1/webhooks/telegram", json=_telegram_payload())
 
