@@ -39,6 +39,7 @@ from app.schemas.conversation import ProfileData, QuoteDetail, Recommendation
 from app.services.affiliate import AffiliateService
 from app.services.catalog import CatalogService
 from app.services.consent import consent_service
+from app.services.integrations.runt import consultar_vehiculo as _consultar_vehiculo_runt
 from app.services.profiling_matrix import MATRIX, campos_pendientes
 from app.services.propensity import PropensityService
 from app.services.quote import QuoteService
@@ -126,6 +127,18 @@ _PERFILAR_CLIENTE_DECLARATION: dict[str, Any] = {
                     "(hipotecario, libre inversión, etc.)."
                 ),
             },
+            "vehicle_use": {
+                "type": "string",
+                "description": (
+                    "Uso declarado del vehículo (p. ej. 'particular' o "
+                    "'trabajo')."
+                ),
+            },
+            "debt_balance": {
+                "type": "string",
+                "enum": ["<50M", "50-150M", ">150M"],
+                "description": "Rango de saldo declarado del crédito vigente.",
+            },
         },
     },
 }
@@ -142,6 +155,8 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         has_children=args.get("has_children"),
         has_vehicle=args.get("has_vehicle"),
         has_credit=args.get("has_credit"),
+        vehicle_use=args.get("vehicle_use"),
+        debt_balance=args.get("debt_balance"),
     )
     has_declared_data = any(
         value is not None
@@ -154,6 +169,8 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
             declared.has_children,
             declared.has_vehicle,
             declared.has_credit,
+            declared.vehicle_use,
+            declared.debt_balance,
         )
     )
 
@@ -188,6 +205,16 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
             declared.has_credit
             if declared.has_credit is not None
             else getattr(resolved, "has_credit", None)
+        ),
+        vehicle_use=(
+            declared.vehicle_use
+            if declared.vehicle_use is not None
+            else getattr(resolved, "vehicle_use", None)
+        ),
+        debt_balance=(
+            declared.debt_balance
+            if declared.debt_balance is not None
+            else getattr(resolved, "debt_balance", None)
         ),
         source=fuente,
         gender=found_affiliate.gender if afiliado else None,
@@ -472,6 +499,48 @@ def _cerrar_venta(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     return application.model_dump(mode="json")
 
 
+# -- consultar_vehiculo -------------------------------------------------------
+
+_CONSULTAR_VEHICULO_DECLARATION: dict[str, Any] = {
+    "name": "consultar_vehiculo",
+    "description": (
+        "Consulta el vehículo del cliente en el RUNT simulado a partir de su "
+        "placa. Llámala apenas el cliente dé la placa en una cotización de "
+        "movilidad (autos/motos): resuelve marca, línea, año, tipo, "
+        "cilindraje e historial sin que el cliente tenga que declararlos, y "
+        "cítalos (marca, línea y año) al confirmarle el vehículo encontrado."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "placa": {
+                "type": "string",
+                "description": "Placa del vehículo declarada por el cliente.",
+            },
+        },
+        "required": ["placa"],
+    },
+}
+
+
+def _consultar_vehiculo(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    placa = args.get("placa", "")
+    vehiculo = _consultar_vehiculo_runt(placa)
+    if "error" in vehiculo:
+        return vehiculo
+
+    if ctx.profile is None:
+        ctx.profile = ProfileData(source="declarado")
+
+    ctx.profile.vehicle_plate = vehiculo["placa"]
+    ctx.profile.vehicle_brand = vehiculo["marca"]
+    ctx.profile.vehicle_line = vehiculo["linea"]
+    ctx.profile.vehicle_year = vehiculo["modelo"]
+    ctx.profile.vehicle_type = vehiculo["tipo"]
+
+    return vehiculo
+
+
 # -- registro --------------------------------------------------------------
 
 AGENT_TOOLS: dict[str, AgentTool] = {
@@ -498,6 +567,10 @@ AGENT_TOOLS: dict[str, AgentTool] = {
     "cerrar_venta": AgentTool(
         declaration=_CERRAR_VENTA_DECLARATION,
         handler=_cerrar_venta,
+    ),
+    "consultar_vehiculo": AgentTool(
+        declaration=_CONSULTAR_VEHICULO_DECLARATION,
+        handler=_consultar_vehiculo,
     ),
 }
 

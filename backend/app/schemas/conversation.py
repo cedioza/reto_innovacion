@@ -40,6 +40,16 @@ class ProfileData(BaseModel):
     # NO preguntarle a un afiliado.
     source: Optional[str] = None
     gender: Optional[str] = None
+    # Aditivos (plan B5, Fase 2): datos del vehículo resueltos por el RUNT
+    # simulado (`app.services.integrations.runt.consultar_vehiculo`) o
+    # declarados por el cliente, y el saldo de un crédito vigente declarado.
+    vehicle_plate: Optional[str] = None
+    vehicle_brand: Optional[str] = None
+    vehicle_line: Optional[str] = None
+    vehicle_year: Optional[int] = None
+    vehicle_type: Optional[str] = None
+    vehicle_use: Optional[str] = None
+    debt_balance: Optional[str] = None
 
 
 class Recommendation(BaseModel):

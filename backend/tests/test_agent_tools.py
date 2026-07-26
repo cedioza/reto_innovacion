@@ -425,12 +425,13 @@ class TestToolDeclarationsPhase3:
         assert "cerrar_venta" in names
 
     def test_has_five_unique_declarations_with_required_keys(self) -> None:
-        # Nota (plan B5, Fase 1): la tool `campos_pendientes` se sumó de forma
-        # aditiva — 6 tools en total, todas con nombre único.
+        # Nota (plan B5, Fase 2): la tool `consultar_vehiculo` se sumó de
+        # forma aditiva a la `campos_pendientes` de la Fase 1 — 7 tools en
+        # total, todas con nombre único.
         declarations = tool_declarations()
         names = [decl["name"] for decl in declarations]
 
-        assert len(declarations) == 6
+        assert len(declarations) == 7
         assert len(names) == len(set(names))
         for decl in declarations:
             assert "name" in decl

@@ -141,22 +141,31 @@ MATRIX: dict[str, list[dict[str, Any]]] = {
             "campo": "placa",
             "pregunta_sugerida": "¿Cuál es la placa de tu vehículo?",
             "fuente_afiliado": "preguntar",
-            "atributo_perfil": None,
+            "atributo_perfil": "vehicle_plate",
         },
         {
-            "campo": "marca_modelo",
+            "campo": "marca_linea",
             "pregunta_sugerida": (
                 "Se obtiene automáticamente al validar la placa (RUNT "
                 "simulado, ver Fase 2) — no se pregunta directamente."
             ),
             "fuente_afiliado": "api_simulada",
-            "atributo_perfil": None,
+            "atributo_perfil": "vehicle_brand",
+        },
+        {
+            "campo": "modelo_anio",
+            "pregunta_sugerida": (
+                "Se obtiene automáticamente al validar la placa (RUNT "
+                "simulado, ver Fase 2) — no se pregunta directamente."
+            ),
+            "fuente_afiliado": "api_simulada",
+            "atributo_perfil": "vehicle_year",
         },
         {
             "campo": "uso_vehiculo",
             "pregunta_sugerida": "¿El vehículo lo usas particular o para trabajo?",
             "fuente_afiliado": "preguntar",
-            "atributo_perfil": None,
+            "atributo_perfil": "vehicle_use",
         },
     ],
     "hogar": [
@@ -217,7 +226,7 @@ MATRIX: dict[str, list[dict[str, Any]]] = {
             "campo": "saldo",
             "pregunta_sugerida": "¿Cuál es el saldo aproximado de tu crédito?",
             "fuente_afiliado": "base",
-            "atributo_perfil": None,
+            "atributo_perfil": "debt_balance",
         },
     ],
 }
