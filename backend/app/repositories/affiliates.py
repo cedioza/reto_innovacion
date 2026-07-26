@@ -194,21 +194,65 @@ class AffiliateRepository:
                 rows.append((row_num, mapped))
             return rows
 
-    def _parse_csv(
+    def _read_xlsx_rows(
         self, path: str
-    ) -> tuple[dict[str, AffiliateProfile], list[str]]:
-        rows: list[tuple[int, dict[str, str]]] = []
-        for encoding in _ENCODINGS:
-            try:
-                rows = self._read_rows(path, encoding)
-                break
-            except FileNotFoundError:
-                return {}, []  # Graceful fallback — repository returns empty
-            except UnicodeDecodeError:
-                continue
-        else:
-            return {}, []
+    ) -> tuple[list[tuple[int, dict[str, str]]] | None, str | None]:
+        """Read an xlsx file, remapping headers to model field names.
 
+        Returns (rows, None) on success, (None, None) when the file does
+        not exist (silent, mirrors the CSV FileNotFoundError fallback) and
+        (None, error_message) when the file exists but cannot be parsed
+        as a workbook (corrupt / not a real xlsx).
+        """
+        import openpyxl  # local import: only needed on the xlsx branch
+
+        try:
+            workbook = openpyxl.load_workbook(
+                path, read_only=True, data_only=True
+            )
+        except FileNotFoundError:
+            return None, None
+        except Exception as exc:  # noqa: BLE001 - never let a bad file raise
+            return None, f"no se pudo leer el archivo xlsx: {exc}"
+
+        try:
+            sheet = workbook.active
+            rows_iter = sheet.iter_rows(values_only=True)
+            try:
+                header = next(rows_iter)
+            except StopIteration:
+                return [], None
+
+            field_map = {
+                original: HEADER_MAP.get(_normalize_header(str(original)))
+                for original in header
+                if original is not None
+            }
+
+            rows: list[tuple[int, dict[str, str]]] = []
+            for row_num, values in enumerate(rows_iter, start=2):
+                mapped: dict[str, str] = {}
+                for original, value in zip(header, values):
+                    field = field_map.get(original)
+                    if not field:
+                        continue
+                    if value is None:
+                        mapped[field] = ""
+                    elif isinstance(value, str):
+                        mapped[field] = value
+                    else:
+                        mapped[field] = str(value)
+                rows.append((row_num, mapped))
+            return rows, None
+        except Exception as exc:  # noqa: BLE001 - never let a bad file raise
+            return None, f"no se pudo leer el archivo xlsx: {exc}"
+        finally:
+            workbook.close()  # read_only keeps the file open otherwise
+
+    def _rows_to_profiles(
+        self, rows: list[tuple[int, dict[str, str]]]
+    ) -> tuple[dict[str, AffiliateProfile], list[str]]:
+        """Shared mapping/normalization path for both CSV and xlsx rows."""
         profiles: dict[str, AffiliateProfile] = {}
         errors: list[str] = []
 
@@ -228,6 +272,29 @@ class AffiliateRepository:
             )
 
         return profiles, errors
+
+    def _parse_csv(
+        self, path: str
+    ) -> tuple[dict[str, AffiliateProfile], list[str]]:
+        if path.lower().endswith(".xlsx"):
+            rows, read_error = self._read_xlsx_rows(path)
+            if rows is None:
+                return {}, [read_error] if read_error else []
+            return self._rows_to_profiles(rows)
+
+        rows: list[tuple[int, dict[str, str]]] = []
+        for encoding in _ENCODINGS:
+            try:
+                rows = self._read_rows(path, encoding)
+                break
+            except FileNotFoundError:
+                return {}, []  # Graceful fallback — repository returns empty
+            except UnicodeDecodeError:
+                continue
+        else:
+            return {}, []
+
+        return self._rows_to_profiles(rows)
 
     @staticmethod
     def _row_to_profile(serie: str, row: dict[str, str]) -> AffiliateProfile:

@@ -16,6 +16,8 @@ fail until both are rewritten in the next steps of the plan.
 from pathlib import Path
 import tempfile
 
+import openpyxl
+
 from app.core.config import settings
 from app.repositories.affiliates import AffiliateRepository
 from app.services.affiliate import AffiliateService
@@ -228,3 +230,157 @@ class TestAffiliateService:
         profile = self.service.resolve(document_number=None)
         assert profile.document_number == "declared"
         assert profile.age_range == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — xlsx support (plan C1). RED phase: the loader in
+# app/repositories/affiliates.py still reads every path as delimited text
+# (csv.DictReader over an opened text stream) regardless of extension. An
+# .xlsx file is a binary zip archive: opened as text it decodes (latin-1
+# never raises UnicodeDecodeError) but produces garbage "rows" that never
+# match the real header map, so it loads zero profiles instead of parsing
+# the workbook. These tests are expected to fail until Fase 2 adds a real
+# xlsx branch (openpyxl.load_workbook) reusing the same normalization.
+# ---------------------------------------------------------------------------
+
+# Same 15-column real schema as FIXTURE_CSV above, shared between the CSV
+# and xlsx variants of the equivalence fixture so both should normalize to
+# identical profiles once xlsx support exists.
+XLSX_HEADER = [
+    "SERIE",
+    "GENERO",
+    "RANGO_EDAD",
+    "RANGO_SALARIAL",
+    "CATEGORIA",
+    "SEGMENTO_GRUPO_FAMILIAR",
+    "SEGMENTO_POBLACIONAL",
+    "PIRAMIDE_NUEVA",
+    "EMPRESA_FOCO",
+    "CIUDAD_AFILIADO",
+    "HOTELES",
+    "PISCILAGO",
+    "DROGUERIA",
+    "AGENCIAS",
+    "VIVIENDA",
+]
+
+XLSX_ROWS = [
+    # New salary schema, all marks SI, city present -> zone urban.
+    [
+        "X001", "M", "26-40", "Entre 1 y 1.5 SMLV", "SIGMA", "LAMBDA",
+        "RHO", "OMEGA", "EMP_000001", "Bogotá", "SI", "SI", "SI", "SI", "SI",
+    ],
+    # Old salary schema, all marks NO.
+    [
+        "X002", "F", "41-55", "Entre 2 y 4 SMLV", "LAMBDA", "RHO",
+        "OMEGA", "SIGMA", "EMP_000002", "Medellín", "NO", "NO", "NO", "NO", "NO",
+    ],
+    # Open-ended salary, empty city -> zone None.
+    [
+        "X003", "M", "56-65", "Más de 5 SMLV", "RHO", "OMEGA",
+        "SIGMA", "LAMBDA", "EMP_000001", "", "SI", "NO", "SI", "NO", "SI",
+    ],
+    # Mojibake age, empty salary range and some empty marks -> None.
+    [
+        "X004", "F", "36-45 a�os", "", "OMEGA", "SIGMA",
+        "LAMBDA", "RHO", "EMP_000002", "Cali", "", "NO", "", "SI", "",
+    ],
+]
+
+XLSX_DOCUMENTS = ["X001", "X002", "X003", "X004"]
+
+
+def _csv_text(header: list[str], rows: list[list[str]]) -> str:
+    lines = [";".join(header)]
+    lines.extend(";".join(row) for row in rows)
+    return "\n".join(lines) + "\n"
+
+
+def _write_xlsx(path: Path, header: list[str], rows: list[list[str]]) -> None:
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.append(header)
+    for row in rows:
+        sheet.append(row)
+    workbook.save(str(path))
+
+
+class TestAffiliateRepositoryXlsx:
+    # -- equivalence: xlsx must normalize exactly like its CSV twin --------
+
+    def test_xlsx_produces_same_profiles_as_equivalent_csv(
+        self, tmp_path: Path
+    ) -> None:
+        csv_path = tmp_path / "affiliates_equivalent.csv"
+        csv_path.write_text(
+            _csv_text(XLSX_HEADER, XLSX_ROWS), encoding="utf-8-sig"
+        )
+        xlsx_path = tmp_path / "affiliates_equivalent.xlsx"
+        _write_xlsx(xlsx_path, XLSX_HEADER, XLSX_ROWS)
+
+        csv_repo = AffiliateRepository(csv_path=str(csv_path))
+        xlsx_repo = AffiliateRepository(csv_path=str(xlsx_path))
+
+        assert xlsx_repo.count() == csv_repo.count() == len(XLSX_DOCUMENTS)
+
+        for document_number in XLSX_DOCUMENTS:
+            csv_profile = csv_repo.find_by_document(document_number)
+            xlsx_profile = xlsx_repo.find_by_document(document_number)
+            assert csv_profile is not None, (
+                f"CSV fixture sanity check failed for {document_number}"
+            )
+            assert xlsx_profile is not None, (
+                f"xlsx fixture did not load {document_number}"
+            )
+            assert xlsx_profile.document_number == csv_profile.document_number
+            assert xlsx_profile.salary_range == csv_profile.salary_range
+            assert xlsx_profile.age_range == csv_profile.age_range
+            assert xlsx_profile.city == csv_profile.city
+            assert xlsx_profile.zone == csv_profile.zone
+            assert xlsx_profile.gender == csv_profile.gender
+            assert xlsx_profile.category == csv_profile.category
+            assert (
+                xlsx_profile.household_segment == csv_profile.household_segment
+            )
+            assert (
+                xlsx_profile.population_segment == csv_profile.population_segment
+            )
+            assert xlsx_profile.pyramid == csv_profile.pyramid
+            assert xlsx_profile.empresa_foco == csv_profile.empresa_foco
+            assert xlsx_profile.uses_hoteles == csv_profile.uses_hoteles
+            assert xlsx_profile.uses_piscilago == csv_profile.uses_piscilago
+            assert xlsx_profile.uses_drogueria == csv_profile.uses_drogueria
+            assert xlsx_profile.uses_agencias == csv_profile.uses_agencias
+            assert xlsx_profile.uses_vivienda == csv_profile.uses_vivienda
+
+    # -- graceful degradation on the xlsx path ------------------------------
+
+    def test_nonexistent_xlsx_path_returns_empty_repo_without_exception(
+        self, tmp_path: Path
+    ) -> None:
+        missing_path = tmp_path / "no_such_file.xlsx"
+        repo = AffiliateRepository(csv_path=str(missing_path))
+        assert repo.find_by_document("X001") is None
+        assert repo.count() == 0
+
+    def test_corrupt_xlsx_reports_error_without_raising(
+        self, tmp_path: Path
+    ) -> None:
+        # A plain-text file wearing an .xlsx extension: not a real
+        # zip/workbook at all — the loader must never raise, just report
+        # the failure and yield an empty repository.
+        corrupt_path = tmp_path / "corrupt.xlsx"
+        corrupt_path.write_text(
+            "esto no es un workbook xlsx valido\n"
+            "linea de datos 1\n"
+            "linea de datos 2\n"
+            "linea de datos 3\n",
+            encoding="utf-8",
+        )
+        repo = AffiliateRepository(csv_path=str(corrupt_path))
+
+        result = repo.find_by_document("X001")
+
+        assert result is None
+        assert repo.count() == 0
+        assert len(repo.load_errors) > 0
