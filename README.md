@@ -32,11 +32,50 @@ Para quién: afiliados de Colsubsidio (perfil desde la base anonimizada por
 - **Infra**: Dokploy sobre VPS propio (backend Nixpacks, frontend
   Dockerfile+nginx, Postgres gestionado).
 
-## Demo y video
+## Demo en vivo
 
-> 🔗 **Demo desplegado**: pendiente — se publica el sábado.
+> 🔗 **[colsubsidio.zyvra.lat](https://colsubsidio.zyvra.lat/)** — el chat web
+> desplegado, listo para probar sin instalar nada.
 >
 > 🎥 **Video**: pendiente — se publica el domingo.
+
+### Cómo usarlo
+
+Abre el link y conversa como lo haría un afiliado. PólizIA pregunta de a poco
+(máximo 1–2 preguntas por turno), así que déjate llevar por la conversación. Un
+recorrido **happy path** completo:
+
+1. **Saluda y cuenta qué necesitas** — p. ej. *"Hola, quiero proteger mi
+   apartamento"*.
+2. **Responde las preguntas de perfil** (tipo de vivienda, zona, estrato, edad…)
+   o **identifícate con una SERIE de la base** si la tienes — el perfil se arma
+   solo, sin preguntar lo que la base ya sabe.
+3. **Recibe la recomendación con razones** — verás la tarjeta del producto y los
+   motivos concretos del motor ("propietario de vivienda", "zona urbana…").
+4. **Pide la cotización** y juega con ella: *"¿y si le agrego protección contra
+   robo?"*, *"¿qué opción es más barata?"* — ajusta y compara en vivo.
+5. **Cierra**: confirma que quieres dejar la solicitud lista y da un correo.
+   Te llega un email con el link de la aseguradora (simulada) para finalizar.
+
+El momento estrella para probar: a mitad de conversación di *"ah, y tengo
+carro"* — la recomendación **cambia de categoría** y la nueva razón cita
+exactamente ese dato ([por qué](docs/propension.md)).
+
+### Qué NO es happy path (y cómo responde)
+
+- **Preguntas fuera de alcance** (siniestros, reclamos, pagos de pólizas
+  existentes, renovaciones — o temas ajenos a seguros): PólizIA lo dice con
+  calidez, te remite a las líneas de atención de Colsubsidio **sin inventar
+  procedimientos ni teléfonos**, y ofrece continuar con lo que sí hace.
+- **Pedir precio de entrada** (*"¿cuánto vale?"* sin perfil): no inventa una
+  cifra — primero te perfila, porque el precio sale del motor, no del LLM.
+- **Notas de voz**: primero te resume en texto lo que entendió y pide
+  confirmación antes de actuar (nunca ejecuta herramientas sobre un audio sin
+  confirmar).
+- **Intentar cerrar sin consentimiento o sin correo**: no hay cierre — el
+  consentimiento explícito y el correo son obligatorios por diseño.
+- **Cuota de Gemini agotada** (free tier del demo): el chat responde con un
+  mensaje de fallback en lugar de colgarse — reintenta más tarde.
 
 ## Cómo ejecutar
 
@@ -173,6 +212,45 @@ log JSON por evaluación. Dos ejemplos:
 
 📖 **Lógica completa, las 16 reglas y 4 ejemplos calculados:
 [docs/propension.md](docs/propension.md)**
+
+## Flujo de la conversación y guardrails
+
+La conversación sigue un **funnel con estado propio** que vive en el backend
+(nunca en el LLM): `perfilar → recomendar → cotizar → ajustar/comparar → cerrar`.
+Gemini decide *qué preguntar y cómo explicar*; cada paso de negocio es una
+**herramienta** (`perfilar_cliente`, `recomendar_seguro`, `cotizar`,
+`ajustar_comparar`, `cerrar_venta`) que ejecuta los motores deterministas y
+devuelve el resultado que el LLM solo puede relatar. El estado calculado (perfil,
+recomendación, cotización) lo posee el código: el modelo no puede alterarlo ni
+"recordarlo mal" — en un producto financiero, un precio salido de la generación
+libre de un LLM sería descalificatorio.
+
+Guardrails activos (reglas duras del system prompt + diseño de las tools):
+
+1. **Cifras solo de herramientas** — precios, coberturas y recomendaciones salen
+   exclusivamente de las tools; el LLM tiene prohibido inventar, calcular de
+   memoria o redondear.
+2. **Sin interrogatorios** — máximo 1–2 preguntas por turno (Fricción Cero).
+3. **Razones del motor, no genéricas** — al explicar una recomendación cita la
+   evidencia que devolvió el motor de propensión.
+4. **Cierre solo con consentimiento explícito + correo** — sin ambos,
+   `cerrar_venta` rechaza; y nunca promete que "alguien te llamará": el paso
+   siguiente siempre es el correo del cliente.
+5. **Errores de tool → corrige el rumbo** — si falta un paso del funnel (p. ej.
+   cotizar sin perfil), la tool devuelve un error controlado y el agente
+   retrocede al paso correcto en vez de insistir o inventar.
+6. **Alcance acotado** — siniestros, reclamos, pagos de pólizas existentes,
+   renovaciones o temas ajenos: remite con calidez a las líneas de atención de
+   Colsubsidio, sin improvisar procedimientos ni números de contacto.
+7. **Ambigüedad → repreguntar** — si no entendió, lo dice y pide que se lo
+   repitan; nunca actúa sobre una suposición.
+8. **Notas de voz con confirmación** — en turnos de audio las herramientas se
+   deshabilitan: el agente resume lo que entendió y solo actúa cuando el cliente
+   lo confirma por texto.
+
+Además, cada conversación queda **persistida completa** (transcripción, perfil,
+recomendación con razones, cotización y consentimiento con timestamp) — evidencia
+trazable de la asesoría, pensada para el requisito regulatorio.
 
 ## Arquitectura
 
