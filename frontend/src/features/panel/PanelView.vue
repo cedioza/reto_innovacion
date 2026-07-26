@@ -3,11 +3,16 @@
 // "Clientes" (buscador + tabla de clientes del funnel).
 import { ref } from 'vue'
 import { usePanel } from './composables/usePanel'
+import { useClientes } from './composables/useClientes'
 import CohortCard from './components/CohortCard.vue'
 import ClientesTab from './components/ClientesTab.vue'
+import ClienteDrawer from './components/ClienteDrawer.vue'
 
 const { cohortes, fuente, isLoading, error, disparandoSerie, errorDisparo, reintentar, disparar } =
   usePanel()
+
+const { ficha, isLoadingFicha, errorFicha, abrirFicha, reintentarFicha, cerrarFicha } =
+  useClientes({ autoLoad: false })
 
 function handleDisparar(cohorteId, serie) {
   disparar(cohorteId, serie)
@@ -19,8 +24,8 @@ const tabs = [
 ]
 const tabActiva = ref('cohortes')
 
-function handleVerCliente() {
-  // La Fase 5 conectará este evento con el drawer de detalle.
+function handleVerCliente(clienteId) {
+  abrirFicha(clienteId)
 }
 </script>
 
@@ -74,6 +79,15 @@ function handleVerCliente() {
     </div>
 
     <ClientesTab v-else-if="tabActiva === 'clientes'" @ver-cliente="handleVerCliente" />
+
+    <ClienteDrawer
+      v-if="ficha || isLoadingFicha || errorFicha"
+      :ficha="ficha"
+      :is-loading="isLoadingFicha"
+      :error="errorFicha"
+      @cerrar="cerrarFicha"
+      @reintentar="reintentarFicha"
+    />
   </section>
 </template>
 
