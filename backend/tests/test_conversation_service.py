@@ -1,5 +1,7 @@
 """Tests for conversation orchestration — TDD RED phase."""
 
+from datetime import datetime
+
 import pytest
 
 from app.services.conversation import ConversationService
@@ -52,6 +54,23 @@ class TestConversationService:
         assert updated.recommendation is not None
         assert updated.quote is not None
         assert len(updated.recommendation.reasons) > 0
+
+    def test_flow_messages_carry_timestamp(self) -> None:
+        body = ConversationCreate(message=Message(role="user", content="Quiero proteger mi casa"))
+        session = self.service.create(body)
+
+        profile = ProfileData(
+            age_range="26-40",
+            property_type="house",
+            zone="urban",
+            stratum=3,
+        )
+        updated = self.service.update_profile(session.session_id, profile)
+
+        assert len(updated.messages) > 0
+        for m in updated.messages:
+            assert m.timestamp is not None
+            datetime.fromisoformat(m.timestamp)
 
     def test_update_profile_without_session_raises_error(self) -> None:
         with pytest.raises(ValueError, match="not found"):

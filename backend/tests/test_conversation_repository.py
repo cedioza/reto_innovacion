@@ -71,6 +71,27 @@ class TestConversationRepository:
         self.repo.save(b.session_id, b)
         assert self.repo.count() == 2
 
+    def test_timestamp_survives_roundtrip(self) -> None:
+        s = ConversationResponse(
+            session_id="sess-ts",
+            state=ConversationState.COLLECTING_PROFILE,
+            messages=[
+                Message(
+                    role="user",
+                    content="Hola",
+                    timestamp="2026-07-25T10:00:00+00:00",
+                )
+            ],
+            next_action="Tell us about your home",
+        )
+        self.repo.save(s.session_id, s)
+
+        second_repo = ConversationRepository(engine=self.engine)
+        found = second_repo.find("sess-ts")
+
+        assert found is not None
+        assert found.messages[0].timestamp == "2026-07-25T10:00:00+00:00"
+
     def test_survives_repository_recreation(self) -> None:
         s = ConversationResponse(
             session_id="sess-persist",
