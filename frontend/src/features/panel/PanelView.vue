@@ -1,7 +1,8 @@
 <script setup>
-// Panel de negocio: pestaña "Cohortes" (disparador proactivo) y pestaña
-// "Clientes" (buscador + tabla de clientes del funnel).
-import { ref } from 'vue'
+// Panel de negocio en tres vistas independientes: "Oferta proactiva"
+// (cohortes del disparador), "Funnel de ventas" (métricas por producto) y
+// "Clientes" (buscador + ficha). El encabezado se adapta a la pestaña activa.
+import { computed, ref } from 'vue'
 import { usePanel } from './composables/usePanel'
 import { useClientes } from './composables/useClientes'
 import CohortCard from './components/CohortCard.vue'
@@ -20,10 +21,40 @@ function handleDisparar(cohorteId, serie) {
 }
 
 const tabs = [
-  { id: 'cohortes', label: 'Cohortes' },
-  { id: 'clientes', label: 'Clientes' },
+  {
+    id: 'proactiva',
+    label: 'Oferta proactiva',
+    titulo: 'Panel — Oferta proactiva',
+    descripcion: 'El seguro correcto, en el momento correcto, por el canal correcto.',
+  },
+  {
+    id: 'funnel',
+    label: 'Funnel de ventas',
+    titulo: 'Funnel de ventas',
+    descripcion: 'De la conversación a la compra: conversión por producto.',
+  },
+  {
+    id: 'clientes',
+    label: 'Clientes',
+    titulo: 'Clientes',
+    descripcion: 'Quién pasó por el funnel: perfil, seguros ofrecidos y comprados.',
+  },
 ]
-const tabActiva = ref('cohortes')
+
+const tabActiva = ref('proactiva')
+const tabActual = computed(() => tabs.find((tab) => tab.id === tabActiva.value) ?? tabs[0])
+
+// Las vistas de datos densos (tabla de clientes, tiles del funnel) respiran
+// mejor con más ancho que las tarjetas de cohorte.
+const esVistaAncha = computed(() => tabActiva.value !== 'proactiva')
+
+function cambiarTab(id) {
+  if (id === tabActiva.value) return
+  // Salir de "Clientes" con la ficha abierta dejaría el drawer flotando
+  // sobre una vista que no le corresponde.
+  if (tabActiva.value === 'clientes') cerrarFicha()
+  tabActiva.value = id
+}
 
 function handleVerCliente(clienteId) {
   abrirFicha(clienteId)
@@ -31,31 +62,36 @@ function handleVerCliente(clienteId) {
 </script>
 
 <template>
-  <section class="panel-view">
+  <section class="panel-view" :class="{ 'is-wide': esVistaAncha }">
     <header class="panel-header">
-      <h1>Panel — Oferta proactiva</h1>
-      <p class="pitch">El seguro correcto, en el momento correcto, por el canal correcto.</p>
+      <h1>{{ tabActual.titulo }}</h1>
+      <p class="pitch">{{ tabActual.descripcion }}</p>
     </header>
 
-    <nav class="tabs">
+    <nav class="tabs" role="tablist" aria-label="Vistas del panel">
       <button
         v-for="tab in tabs"
+        :id="`tab-${tab.id}`"
         :key="tab.id"
         type="button"
         class="tab-btn"
         :class="{ active: tabActiva === tab.id }"
-        @click="tabActiva = tab.id"
+        role="tab"
+        :aria-selected="tabActiva === tab.id"
+        :aria-controls="`panel-${tab.id}`"
+        @click="cambiarTab(tab.id)"
       >
         {{ tab.label }}
       </button>
     </nav>
 
-    <div v-if="tabActiva === 'cohortes'">
-      <section class="funnel-block">
-        <h2>Funnel de ventas por producto</h2>
-        <FunnelSection />
-      </section>
-
+    <div
+      v-if="tabActiva === 'proactiva'"
+      id="panel-proactiva"
+      class="tab-panel"
+      role="tabpanel"
+      aria-labelledby="tab-proactiva"
+    >
       <p v-if="isLoading" class="state-text">Cargando cohortes…</p>
 
       <div v-else-if="error" class="state-card">
@@ -84,7 +120,25 @@ function handleVerCliente(clienteId) {
       </div>
     </div>
 
-    <ClientesTab v-else-if="tabActiva === 'clientes'" @ver-cliente="handleVerCliente" />
+    <div
+      v-else-if="tabActiva === 'funnel'"
+      id="panel-funnel"
+      class="tab-panel"
+      role="tabpanel"
+      aria-labelledby="tab-funnel"
+    >
+      <FunnelSection />
+    </div>
+
+    <div
+      v-else-if="tabActiva === 'clientes'"
+      id="panel-clientes"
+      class="tab-panel"
+      role="tabpanel"
+      aria-labelledby="tab-clientes"
+    >
+      <ClientesTab @ver-cliente="handleVerCliente" />
+    </div>
 
     <ClienteDrawer
       v-if="ficha || isLoadingFicha || errorFicha"
@@ -104,6 +158,11 @@ function handleVerCliente(clienteId) {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  transition: max-width 0.24s ease;
+}
+
+.panel-view.is-wide {
+  max-width: 980px;
 }
 
 .panel-header {
@@ -125,26 +184,61 @@ function handleVerCliente(clienteId) {
   font-weight: 600;
 }
 
+/* Control segmentado: cada vista es un panel propio, no una sección más
+   de una página larga. */
 .tabs {
   display: flex;
-  gap: 0.5rem;
-  border-bottom: 1px solid var(--chat-border);
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--chat-border);
+  border-radius: 0.7rem;
+  background: #fff;
 }
 
 .tab-btn {
-  padding: 0.55rem 1.1rem;
+  flex: 1 1 auto;
+  padding: 0.55rem 1rem;
   border: none;
+  border-radius: 0.5rem;
   background: transparent;
   color: var(--chat-text-muted);
   font-size: 0.9rem;
   font-weight: 700;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.tab-btn:hover:not(.active) {
+  background: var(--chat-green-light);
+  color: var(--chat-green-dark);
 }
 
 .tab-btn.active {
-  color: var(--chat-green-dark);
-  border-bottom-color: var(--chat-green);
+  background: var(--chat-green);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 92, 58, 0.28);
+}
+
+.tab-panel {
+  animation: panel-in 0.22s ease both;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-view {
+    transition: none;
+  }
+
+  .tab-panel {
+    animation: none;
+  }
 }
 
 .state-text {
@@ -193,21 +287,5 @@ function handleVerCliente(clienteId) {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-.funnel-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  /* El funnel vive dentro de la pestaña "Cohortes" (un `div` normal, no el
-     flex de `.panel-view`), así que el separador con la lista va explícito. */
-  margin-bottom: 1.25rem;
-}
-
-.funnel-block h2 {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--chat-text);
 }
 </style>
