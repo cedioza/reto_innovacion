@@ -75,3 +75,11 @@ export function getHandoff(token) {
 export function finalizeHandoff(token) {
   return api.post(`/api/v1/handoff/${token}/finalize`)
 }
+
+export function getPanelCohortes() {
+  return api.get('/api/v1/panel/cohortes')
+}
+
+export function dispararOferta(cohorteId, serie) {
+  return api.post(`/api/v1/panel/cohortes/${cohorteId}/disparar`, { serie })
+}
