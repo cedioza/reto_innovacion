@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import ValidationError
 import pytest
 
@@ -9,6 +11,7 @@ from app.schemas.conversation import (
     ConversationCreate,
     ConversationResponse,
     ConversationState,
+    Message,
     ProfileData,
     QuoteDetail,
     Recommendation,
@@ -109,6 +112,27 @@ class TestConsentRequest:
     def test_rejects_missing_consent_given(self):
         with pytest.raises(ValidationError):
             ConsentRequest()
+
+
+class TestMessageTimestamp:
+    def test_new_message_has_utc_iso_timestamp(self):
+        m = Message(role="user", content="hola")
+        assert m.timestamp is not None
+        parsed = datetime.fromisoformat(m.timestamp)
+        assert parsed.utcoffset().total_seconds() == 0
+
+    def test_message_without_timestamp_still_validates(self):
+        m = Message.model_validate({"role": "user", "content": "viejo"})
+        assert m.role == "user"
+        assert m.content == "viejo"
+
+    def test_explicit_timestamp_is_preserved(self):
+        m = Message(
+            role="user",
+            content="x",
+            timestamp="2026-07-25T10:00:00+00:00",
+        )
+        assert m.timestamp == "2026-07-25T10:00:00+00:00"
 
 
 class TestConsentedApplication:

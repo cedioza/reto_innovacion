@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -18,6 +19,10 @@ class Message(BaseModel):
     content: str
     type: str = "text"
     payload: Optional[dict] = None
+    # sellado al crear el mensaje (ISO-8601 UTC); en datos persistidos antes de este campo se rellena al leer
+    timestamp: Optional[str] = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 class ProfileData(BaseModel):

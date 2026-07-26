@@ -23,10 +23,15 @@ function makeMessage(from, text, timestamp = new Date(), extra = {}) {
 
 function mapSessionMessages(sessionMessages) {
   return sessionMessages.map((message) =>
-    makeMessage(message.role === 'assistant' ? 'bot' : 'user', message.content, null, {
-      type: message.type ?? 'text',
-      payload: message.payload ?? null,
-    }),
+    makeMessage(
+      message.role === 'assistant' ? 'bot' : 'user',
+      message.content,
+      message.timestamp ? new Date(message.timestamp) : null,
+      {
+        type: message.type ?? 'text',
+        payload: message.payload ?? null,
+      },
+    ),
   )
 }
 
@@ -44,8 +49,9 @@ export function useChat() {
   const storedSessionId = localStorage.getItem(SESSION_STORAGE_KEY)
   let hydrationPromise = null
 
-  // Reconstruye `messages` desde `session.messages` conservando el prefijo local
-  // y los timestamps ya pintados (mismo camino que usa `sendMessage`).
+  // Reconstruye `messages` desde `session.messages` conservando el prefijo local.
+  // Se prefiere el timestamp real del servidor; si un mensaje no lo trae (datos
+  // viejos), se cae al timestamp ya pintado o, en su defecto, a la hora actual.
   function syncMessagesFromSession(session) {
     const previousTimestamps = messages.value.map((message) => message.timestamp)
     const now = new Date()
@@ -56,7 +62,9 @@ export function useChat() {
         makeMessage(
           message.role === 'assistant' ? 'bot' : 'user',
           message.content,
-          previousTimestamps[prefix.length + index] ?? now,
+          message.timestamp
+            ? new Date(message.timestamp)
+            : (previousTimestamps[prefix.length + index] ?? now),
           {
             type: message.type ?? 'text',
             payload: message.payload ?? null,
