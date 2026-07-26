@@ -9,6 +9,7 @@ dependencies = [
     "pydantic-settings>=2.4",
     "httpx>=0.27",
     "psycopg[binary]>=3.2",
+    "sqlmodel>=0.0.22",
 ]
 
 [project.optional-dependencies]

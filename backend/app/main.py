@@ -1,5 +1,8 @@
 """Punto de entrada de la aplicación FastAPI."""
 
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -9,8 +12,17 @@ from app.api.routes.health import router as health_router
 from app.api.routes.integrations import router as integrations_router
 from app.api.routes.webhooks import router as webhooks_router
 from app.core.config import settings
+from app.repositories.db import init_db
 
-app = FastAPI(title="Reto Innovación API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Crea las tablas de persistencia al arrancar (sin Alembic, ver `app.repositories.db`)."""
+    init_db()
+    yield
+
+
+app = FastAPI(title="Reto Innovación API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
