@@ -51,6 +51,44 @@ tablas `conversaciones`, `solicitudes`, `sesiones_canal` y `eventos_procesados`
   de compatibilidad en cada módulo de tests); el shape SQL es compatible con
   Postgres.
 
+## Base de afiliados y columnas sintéticas (C2)
+
+La base anonimizada de afiliados vive en la tabla **`afiliados`** (PK `serie`, el
+identificador que reemplaza a la cédula). El lookup de `perfilar_cliente()` sigue
+la cascada **cache en memoria → tabla `afiliados` → CSV/xlsx local (fallback
+dev)** — sin `DATABASE_URL` ni tabla cargada, todo funciona igual que antes con
+`AFFILIATE_CSV_PATH`.
+
+**Carga** (la fuente NUNCA se commitea al repo — regla del vault):
+
+```bash
+python -m app.scripts.cargar_afiliados "ruta\al\archivo.xlsx" --replace
+```
+
+Reusa el parser de C1 (xlsx de la muestra de 500k o CSV `;` de la base completa,
+normalización incluida), inserta por lotes de 5.000 y reporta filas cargadas,
+errores de parseo y duración.
+
+**Columnas reales vs. sintéticas** — decisión de equipo (2026-07-24): 4 de las 5
+marcas de consumo del dataset vienen casi vacías, así que el perfil se complementa
+con columnas **sintéticas**, siempre con prefijo `sint_` para distinguirlas de la
+data real ante el jurado:
+
+| Columna | Origen | Generación |
+|---|---|---|
+| `gender`, `age_range`, `salary_range`, `category`, `household_segment`, `population_segment`, `pyramid`, `empresa_foco`, `city`, `uses_*` | **Real** (dataset Colsubsidio) | Parser C1, normalización por dígitos |
+| `sint_tiene_vehiculo` | Sintética | ≈28%, hash determinista por SERIE |
+| `sint_tiene_credito` | Sintética | ≈35%, hash determinista por SERIE |
+| `sint_tiene_hijos` | Sintética | ≈65% si segmento familiar RHO/LAMBDA, ≈25% resto (correlada con la señal real) |
+| `sint_tipo_vivienda` | Sintética | ≈40% apartment / ≈25% house / ≈35% NULL |
+
+La generación es **determinista** (`sha256(f"{serie}:{campo}")`, sin `random`):
+misma SERIE → mismo perfil sintético en cualquier recarga, reproducible y
+defendible. Al armar el perfil de dominio, `sint_tiene_*` alimenta
+`has_children/has_vehicle/has_credit` y `sint_tipo_vivienda` a `property_type`;
+lo **declarado en conversación siempre pisa lo sintético**. El camino CSV de
+fallback no inventa señales (quedan `None`).
+
 ## Arquitectura de capas
 
 ```

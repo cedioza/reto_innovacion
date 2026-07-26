@@ -59,6 +59,9 @@ class ConversationService:
                     stratum=affiliate.stratum,
                     property_type=affiliate.property_type,
                     zone=affiliate.zone,
+                    has_children=affiliate.has_children,
+                    has_vehicle=affiliate.has_vehicle,
+                    has_credit=affiliate.has_credit,
                 )
 
         session = ConversationResponse(

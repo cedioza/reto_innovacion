@@ -11,9 +11,18 @@ class AffiliateProfile:
     EMPRESA_FOCO, CIUDAD_AFILIADO plus the five consumption marks
     (HOTELES, PISCILAGO, DROGUERIA, AGENCIAS, VIVIENDA).
 
-    The real dataset does not provide `stratum` or `property_type`:
-    `stratum` keeps a default of 3 and `property_type` stays `None`
-    (both are asked in conversation instead).
+    The real dataset does not provide `stratum`: it keeps a default of 3
+    (asked in conversation instead).
+
+    `has_children`, `has_vehicle`, `has_credit` and `property_type` are not
+    part of the real dataset either. When the profile comes from the
+    database, they are filled from the synthetic `sint_*` columns of
+    `AffiliateRecord` (`sint_tiene_hijos`, `sint_tiene_vehiculo`,
+    `sint_tiene_credito`, `sint_tipo_vivienda`) — see
+    `app.repositories.affiliates._record_to_profile`. On the CSV/xlsx
+    fallback path (which lacks those columns) they stay `None`. For
+    non-affiliates the whole profile is declared from conversation, and
+    these fields come from what the client said.
 
     Non-affiliates receive a declared profile built from conversation.
     """
@@ -36,3 +45,6 @@ class AffiliateProfile:
     uses_drogueria: bool | None = None
     uses_agencias: bool | None = None
     uses_vivienda: bool | None = None
+    has_children: bool | None = None
+    has_vehicle: bool | None = None
+    has_credit: bool | None = None

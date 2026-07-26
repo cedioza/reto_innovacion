@@ -14,7 +14,13 @@ import json
 from pathlib import Path
 import tempfile
 
+from sqlalchemy.pool import StaticPool
+from sqlmodel import Session, create_engine
+
 from app.core.config import settings
+from app.models.affiliate_record import AffiliateRecord
+from app.repositories import db as db_module
+from app.repositories.db import init_db
 from app.schemas.conversation import ProfileData
 from app.services.catalog import CatalogService
 from app.services.integrations import resend_client
@@ -721,3 +727,94 @@ class TestFunnelCoherenteMulticategoria:
         assert (
             result["recommendation"]["product_name"] == "Crédito Vida Deudor"
         )
+
+
+# --- Fase 3 (C2): fusión base sintética + declarado en perfilar_cliente ------
+#
+# TDD-light, RED antes de implementar: `_perfilar_cliente` todavía no fusiona
+# las señales sintéticas de la BD (`AffiliateRecord.sint_*`, mapeadas a
+# has_children/has_vehicle/has_credit/property_type en `AffiliateProfile` por
+# `AffiliateRepository._record_to_profile`) con lo declarado en la
+# conversación. Estos tests describen el comportamiento objetivo: declarado
+# gana; si el campo declarado es None, se usa el de la base. Fallan hoy por
+# la razón correcta (el código de producción aún ignora esas señales del
+# perfil resuelto).
+#
+# `AffiliateService()` (usada internamente por `_perfilar_cliente`) crea un
+# `AffiliateRepository()` sin engine explícito, que resuelve el engine vía
+# `app.repositories.db.get_engine()` — se monkeypatchea esa función para
+# apuntar a un SQLite in-memory propio de cada test, sin depender del engine
+# global de la app.
+
+
+class TestPerfilarClienteConBaseSintetica:
+    def setup_method(self) -> None:
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        init_db(self.engine)
+        with Session(self.engine) as session:
+            session.add(
+                AffiliateRecord(
+                    serie="S888",
+                    age_range="26-40",
+                    household_segment="RHO",
+                    sint_tiene_vehiculo=True,
+                    sint_tiene_credito=False,
+                    sint_tiene_hijos=False,
+                    sint_tipo_vivienda="apartment",
+                )
+            )
+            session.commit()
+
+    def test_serie_real_arma_perfil_con_senales_sin_preguntar(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="s-sintetico-1")
+
+        result = execute_tool(
+            "perfilar_cliente", {"document_number": "S888"}, ctx
+        )
+
+        assert result["afiliado"] is True
+        assert ctx.profile.has_vehicle is True
+        assert ctx.profile.property_type == "apartment"
+
+    def test_serie_real_recomienda_movilidad_sin_declarar(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="s-sintetico-2")
+
+        execute_tool("perfilar_cliente", {"document_number": "S888"}, ctx)
+        result = execute_tool("recomendar_seguro", {}, ctx)
+
+        assert result["product_id"] == "movilidad-auto"
+        codes = {reason["code"] for reason in result["reasons"]}
+        assert "vehicle_declared" in codes
+
+    def test_declarado_pisa_sintetico(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="s-sintetico-3")
+
+        execute_tool(
+            "perfilar_cliente",
+            {"document_number": "S888", "has_vehicle": False},
+            ctx,
+        )
+
+        assert ctx.profile.has_vehicle is False
+
+    def test_no_afiliado_sigue_flujo_declarado(self, monkeypatch) -> None:
+        monkeypatch.setattr(db_module, "get_engine", lambda: self.engine)
+        ctx = ToolContext(session_id="s-sintetico-4")
+
+        result = execute_tool(
+            "perfilar_cliente", {"has_credit": True}, ctx
+        )
+
+        assert ctx.profile.has_credit is True
+        assert result["fuente"] == "declarado"
