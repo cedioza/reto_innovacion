@@ -83,3 +83,7 @@ export function getPanelCohortes() {
 export function dispararOferta(cohorteId, serie) {
   return api.post(`/api/v1/panel/cohortes/${cohorteId}/disparar`, { serie })
 }
+
+export function getPanelMetricas() {
+  return api.get('/api/v1/panel/metricas')
+}

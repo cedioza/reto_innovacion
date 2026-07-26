@@ -4,6 +4,7 @@
 // que abre el chat en la sesión recién creada por el backend.
 import { usePanel } from './composables/usePanel'
 import CohortCard from './components/CohortCard.vue'
+import FunnelSection from './components/FunnelSection.vue'
 
 const { cohortes, fuente, isLoading, error, disparandoSerie, errorDisparo, reintentar, disparar } =
   usePanel()
@@ -19,6 +20,11 @@ function handleDisparar(cohorteId, serie) {
       <h1>Panel — Oferta proactiva</h1>
       <p class="pitch">El seguro correcto, en el momento correcto, por el canal correcto.</p>
     </header>
+
+    <section class="funnel-block">
+      <h2>Funnel de ventas por producto</h2>
+      <FunnelSection />
+    </section>
 
     <p v-if="isLoading" class="state-text">Cargando cohortes…</p>
 
@@ -123,5 +129,18 @@ function handleDisparar(cohorteId, serie) {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.funnel-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.funnel-block h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--chat-text);
 }
 </style>
