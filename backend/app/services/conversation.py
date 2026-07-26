@@ -269,34 +269,22 @@ class ConversationService:
             if code not in available_codes:
                 raise ValueError(f"Unknown adjustment code: {code}")
 
-        actual = session.quote.model_dump()
-        propuesta = self._quote.calculate_quote(
-            session.profile, adjustments, product_id=product_id
+        adjustments_a = [a["code"] for a in (session.quote.adjustments or [])]
+        result = self._quote.compare(
+            session.profile, product_id, adjustments_a, adjustments
         )
-        diferencia_mensual = round(
-            propuesta["monthly_premium"] - actual["monthly_premium"], 2
-        )
-        ajustes_disponibles = [
-            {"code": adj.code, "name": adj.name, "description": adj.description}
-            for adj in (product.adjustments if product else [])
-        ]
 
         session.quote = QuoteDetail(
             **{
                 k: v
-                for k, v in propuesta.items()
+                for k, v in result["propuesta"].items()
                 if k in QuoteDetail.model_fields
             }
         )
 
-        payload = {
-            "actual": actual,
-            "propuesta": propuesta,
-            "diferencia_mensual": diferencia_mensual,
-            "ajustes_disponibles": ajustes_disponibles,
-        }
+        payload = result
         content = (
-            f"⚖️ Comparación: diferencia ${diferencia_mensual:,.0f} COP/mes"
+            f"⚖️ Comparación: diferencia ${result['diferencia_mensual']:,.0f} COP/mes"
         )
 
         comparison_message = next(

@@ -70,3 +70,50 @@ class QuoteService:
             "coverage_details": [c.description for c in product.coverages],
             "exclusions": [e.name for e in product.exclusions],
         }
+
+    def compare(
+        self,
+        profile: ProfileData,
+        product_id: str,
+        adjustments_a: list[str] | None = None,
+        adjustments_b: list[str] | None = None,
+    ) -> dict:
+        """Primitiva única de comparación actual vs. propuesta.
+
+        Centraliza el cálculo que hoy vive duplicado en la tool del bot
+        (`_ajustar_comparar` en `agent_tools.py`) y en el endpoint REST
+        (`ConversationService.apply_adjustments`): bot, REST y panel deben
+        mostrar exactamente el mismo peso para la misma comparación entre
+        dos combinaciones de ajustes de un mismo perfil y producto.
+        """
+        codes_a = adjustments_a or []
+        codes_b = adjustments_b or []
+
+        actual = self.calculate_quote(profile, codes_a, product_id)
+        propuesta = self.calculate_quote(profile, codes_b, product_id)
+
+        diferencia_mensual = round(
+            propuesta["monthly_premium"] - actual["monthly_premium"], 2
+        )
+        diferencia_anual = round(
+            propuesta["annual_premium"] - actual["annual_premium"], 2
+        )
+
+        ajustes_activados = [code for code in codes_b if code not in codes_a]
+        ajustes_retirados = [code for code in codes_a if code not in codes_b]
+
+        product = self._catalog.get_product(product_id)
+        ajustes_disponibles = [
+            {"code": adj.code, "name": adj.name, "description": adj.description}
+            for adj in (product.adjustments if product else [])
+        ]
+
+        return {
+            "actual": actual,
+            "propuesta": propuesta,
+            "diferencia_mensual": diferencia_mensual,
+            "diferencia_anual": diferencia_anual,
+            "ajustes_activados": ajustes_activados,
+            "ajustes_retirados": ajustes_retirados,
+            "ajustes_disponibles": ajustes_disponibles,
+        }

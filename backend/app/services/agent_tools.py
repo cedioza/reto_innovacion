@@ -306,31 +306,17 @@ def _ajustar_comparar(
     if ctx.quote is None:
         return _sin_cotizacion_error()
 
-    actual = ctx.quote
     product_id = (ctx.recommendation or {}).get("product_id", "hogar-estandar")
-    adjustments = args.get("adjustments") or []
-    propuesta = QuoteService().calculate_quote(
-        ctx.profile, adjustments, product_id=product_id
+    adjustments_a = [a["code"] for a in (ctx.quote.get("adjustments") or [])]
+    adjustments_b = args.get("adjustments") or []
+
+    result = QuoteService().compare(
+        ctx.profile, product_id, adjustments_a, adjustments_b
     )
 
-    diferencia_mensual = round(
-        propuesta["monthly_premium"] - actual["monthly_premium"], 2
-    )
+    ctx.quote = result["propuesta"]
 
-    product = CatalogService().get_product(product_id)
-    ajustes_disponibles = [
-        {"code": adj.code, "name": adj.name, "description": adj.description}
-        for adj in (product.adjustments if product else [])
-    ]
-
-    ctx.quote = propuesta
-
-    return {
-        "actual": actual,
-        "propuesta": propuesta,
-        "diferencia_mensual": diferencia_mensual,
-        "ajustes_disponibles": ajustes_disponibles,
-    }
+    return result
 
 
 # -- cerrar_venta -------------------------------------------------------------
