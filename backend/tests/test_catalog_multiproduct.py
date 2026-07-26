@@ -160,13 +160,15 @@ class TestQuoteServiceMultiProduct:
         assert result["monthly_premium"] == expected_monthly
 
     def test_age_risk_factor_applies_to_any_product(self) -> None:
-        """Comportamiento actual del motor (factor de edad global 1.15 para
-        18-25/65+, documentado hasta B4): se verifica con vida-basico."""
+        """El motor lee `product.factors["age_range"]` de cada producto en
+        vez del multiplicador global hardcodeado 1.15 para 18-25/65+: para
+        vida-basico el catalogo define 18-25 -> 0.85 (mas barato para
+        jovenes en este producto), no un recargo."""
         profile = ProfileData(age_range="18-25")
 
         result = QuoteService().calculate_quote(profile, product_id="vida-basico")
 
-        assert result["monthly_premium"] == 17_250.0
+        assert result["monthly_premium"] == 12_750.0
 
     def test_product_own_adjustment_is_applied(self) -> None:
         profile = ProfileData(age_range="36-45")

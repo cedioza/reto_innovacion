@@ -1,5 +1,7 @@
 """Tests for the quote engine — TDD RED phase."""
 
+import pytest
+
 from app.services.quote import QuoteService
 from app.schemas.conversation import ProfileData
 
@@ -60,7 +62,7 @@ class TestQuoteService:
 
     def test_senior_age_increases_premium(self) -> None:
         adult = self._make_profile(age_range="26-40")
-        senior = self._make_profile(age_range="65+")
+        senior = self._make_profile(age_range="60+")
         adult_q = self.service.calculate_quote(adult)
         senior_q = self.service.calculate_quote(senior)
         assert senior_q["annual_premium"] > adult_q["annual_premium"]
@@ -71,3 +73,98 @@ class TestQuoteService:
         assert len(quote["coverage_details"]) > 0
         assert len(quote["exclusions"]) > 0
         assert quote["currency"] == "COP"
+
+
+class TestQuoteMulticategory:
+    """Motor de cotización genérico: aplica `product.factors` de forma
+    genérica a cualquier producto del catálogo (criterio 1 de B4), en vez
+    del multiplicador de edad hardcodeado que solo conocía hogar-estandar.
+    """
+
+    PRODUCT_IDS = [
+        "hogar-estandar",
+        "accidentes-personales",
+        "vida-basico",
+        "movilidad-auto",
+        "credito-vida-deudor",
+    ]
+
+    def setup_method(self) -> None:
+        self.service = QuoteService()
+
+    def _make_profile(self, age_range: str | None = "36-45") -> ProfileData:
+        return ProfileData(age_range=age_range)
+
+    @pytest.mark.parametrize("product_id", PRODUCT_IDS)
+    def test_quote_shape_for_every_product(self, product_id: str) -> None:
+        profile = self._make_profile()
+        quote = self.service.calculate_quote(profile, product_id=product_id)
+
+        for key in (
+            "base_amount",
+            "adjustments",
+            "monthly_premium",
+            "annual_premium",
+            "currency",
+            "coverage_details",
+            "exclusions",
+        ):
+            assert key in quote, key
+
+        assert quote["base_amount"] > 0
+        assert quote["annual_premium"] > 0
+        assert quote["monthly_premium"] > 0
+        assert quote["currency"] == "COP"
+        assert quote["monthly_premium"] == round(quote["annual_premium"] / 12, 2)
+
+    @pytest.mark.parametrize("product_id", PRODUCT_IDS)
+    def test_same_profile_same_amounts_for_every_product(self, product_id: str) -> None:
+        profile = self._make_profile()
+        q1 = self.service.calculate_quote(profile, product_id=product_id)
+        q2 = self.service.calculate_quote(profile, product_id=product_id)
+        assert q1["annual_premium"] == q2["annual_premium"]
+        assert q1["monthly_premium"] == q2["monthly_premium"]
+
+    def test_vida_age_factors_from_catalog(self) -> None:
+        """vida-basico define en el catalogo age_range 36-45 -> 1.0 y
+        60+ -> 1.80; el motor debe leer esos factores del producto en vez
+        de aplicar el multiplicador global hardcodeado de 1.15."""
+        adult = self._make_profile(age_range="36-45")
+        senior = self._make_profile(age_range="60+")
+
+        adult_q = self.service.calculate_quote(adult, product_id="vida-basico")
+        senior_q = self.service.calculate_quote(senior, product_id="vida-basico")
+
+        assert senior_q["annual_premium"] > adult_q["annual_premium"]
+        assert senior_q["annual_premium"] == round(adult_q["annual_premium"] * 1.8, 2)
+
+    def test_hogar_senior_surcharge_applies(self) -> None:
+        """El bucket de hogar para adultos mayores es "60+" (corregido desde
+        "65+" en el JSON); hoy el motor no lo reconoce porque hardcodea la
+        edad y el catalogo aun dice "65+", por lo que este test falla."""
+        adult = self._make_profile(age_range="36-45")
+        senior = self._make_profile(age_range="60+")
+
+        adult_q = self.service.calculate_quote(adult, product_id="hogar-estandar")
+        senior_q = self.service.calculate_quote(senior, product_id="hogar-estandar")
+
+        assert senior_q["annual_premium"] > adult_q["annual_premium"]
+
+    def test_factor_without_profile_field_is_neutral(self) -> None:
+        """movilidad-auto define un factor `vehicle_type` que no existe como
+        campo en ProfileData; debe cotizar sin excepcion y de forma neutra
+        (x1.0) cuando el campo no esta presente en el perfil."""
+        profile = self._make_profile(age_range="36-45")
+
+        quote = self.service.calculate_quote(profile, product_id="movilidad-auto")
+
+        assert quote["annual_premium"] == 1_440_000.0
+
+    def test_unknown_bucket_is_neutral(self) -> None:
+        """accidentes-personales solo define factores para 18-25 y 60+; un
+        bucket no listado (36-45) debe cotizar sin recargo (neutro x1.0)."""
+        profile = self._make_profile(age_range="36-45")
+
+        quote = self.service.calculate_quote(profile, product_id="accidentes-personales")
+
+        assert quote["annual_premium"] == 60_000.0

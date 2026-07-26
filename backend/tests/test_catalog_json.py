@@ -117,7 +117,7 @@ class TestCatalogRepositoryNewFields:
         assert "age_range" in product.factors
         age_range = product.factors["age_range"]
         assert age_range["18-25"] == 1.15
-        assert age_range["65+"] == 1.15
+        assert age_range["60+"] == 1.15
 
 
 class TestCatalogRepositoryInvalidJson:

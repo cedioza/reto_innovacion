@@ -10,6 +10,13 @@ class QuoteService:
     The quote is calculated from a fixed product catalog and the
     user's declared profile. Every call with the same inputs produces
     exactly the same output.
+
+    Risk factors (e.g. age range, vehicle type) come from each
+    product's own `factors` block in the catalog and are applied
+    generically: for every factor name declared by the product, the
+    matching attribute is read off the profile and its declared value
+    looked up in the factor's buckets. Profile fields not present, or
+    bucket values not listed for that factor, are neutral (x1.0).
     """
 
     def __init__(self) -> None:
@@ -27,11 +34,12 @@ class QuoteService:
 
         adjustments = selected_adjustments or []
 
-        # -- Age risk factor --------------------------------------------------
-        age_multiplier = 1.0
-        if profile.age_range:
-            if profile.age_range in ("18-25", "65+"):
-                age_multiplier = 1.15
+        # -- Catalog-driven risk factors ---------------------------------------
+        factor_multiplier = 1.0
+        for factor_name, buckets in (product.factors or {}).items():
+            value = getattr(profile, factor_name, None)
+            if value is not None:
+                factor_multiplier *= buckets.get(str(value), 1.0)
 
         # -- Apply optional adjustments ---------------------------------------
         adjustment_details: list[dict] = []
@@ -49,7 +57,7 @@ class QuoteService:
                     "premium_modifier": adj.premium_modifier,
                 })
 
-        base = product.base_price * age_multiplier
+        base = product.base_price * factor_multiplier
         annual_premium = round(base * modifier, 2)
         monthly_premium = round(annual_premium / 12, 2)
 
