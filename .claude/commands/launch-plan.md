@@ -81,6 +81,10 @@ powershell -NoProfile -File .claude/parallel/plan-state.ps1 -Action append -Id <
 
 El `launched_at` que fija el helper define el ORDEN de integración de `/merge-plans`.
 
+⚠️ Invoca el helper SIEMPRE por la **ruta absoluta del repo principal** (el worktree
+tiene su propia copia del script que escribiría un estado paralelo equivocado si el
+cwd quedó dentro del worktree — incidente del 25-jul-2026).
+
 ## Paso 4 — Ejecutar el plan (loop de fases, sin gates)
 
 Sigue el protocolo de fases del flujo existente (el Paso 3 de
