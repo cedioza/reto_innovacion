@@ -10,7 +10,9 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
+from app.core.config import settings
 from app.schemas.conversation import (
     ProfileData,
     Recommendation,
@@ -23,6 +25,11 @@ from app.services import handoff
 from app.services.integrations import resend_client
 
 logger = logging.getLogger(__name__)
+
+
+def _apunta_a_localhost(url: str) -> bool:
+    """True si el hostname de `url` es "localhost" o "127.0.0.1"."""
+    return urlparse(url).hostname in ("localhost", "127.0.0.1")
 
 
 class ConsentService:
@@ -81,21 +88,41 @@ class ConsentService:
         self._repo.save(session_id, evidence_hash, application)
 
         if email:
-            try:
-                subject, html = handoff.build_handoff_email(
-                    application, handoff_token
-                )
-                result = resend_client.send_email(email, subject, html)
-                if not result.get("ok", False):
-                    logger.error(
-                        "fallo al enviar correo de handoff para session_id=%s",
-                        session_id,
-                    )
-            except Exception:  # noqa: BLE001 - best-effort, nunca rompe el cierre
+            # Guard E7: si el backend está desplegado (hay `BACKEND_PUBLIC_URL`,
+            # señal que solo se configura en producción para el webhook de
+            # Telegram) pero `FRONTEND_URL` sigue apuntando a localhost, el
+            # correo saldría con un botón "Continuar" muerto para el cliente.
+            # Se omite el envío y se deja constancia en logs; el cierre
+            # (aplicación persistida + handoff_token) no se ve afectado.
+            if settings.backend_public_url and _apunta_a_localhost(
+                settings.frontend_url
+            ):
                 logger.error(
-                    "excepcion al enviar correo de handoff para session_id=%s",
+                    "backend desplegado (BACKEND_PUBLIC_URL=%s) pero "
+                    "FRONTEND_URL=%s apunta a localhost: se omite el envío "
+                    "del correo de handoff para session_id=%s (el link "
+                    "quedaría inaccesible para el cliente); configura "
+                    "FRONTEND_URL con el dominio público real",
+                    settings.backend_public_url,
+                    settings.frontend_url,
                     session_id,
                 )
+            else:
+                try:
+                    subject, html = handoff.build_handoff_email(
+                        application, handoff_token
+                    )
+                    result = resend_client.send_email(email, subject, html)
+                    if not result.get("ok", False):
+                        logger.error(
+                            "fallo al enviar correo de handoff para session_id=%s",
+                            session_id,
+                        )
+                except Exception:  # noqa: BLE001 - best-effort, nunca rompe el cierre
+                    logger.error(
+                        "excepcion al enviar correo de handoff para session_id=%s",
+                        session_id,
+                    )
         else:
             logger.info("sin correo de destino, no se envía handoff")
 
