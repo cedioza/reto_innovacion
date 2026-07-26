@@ -72,9 +72,10 @@ _PERFILAR_CLIENTE_DECLARATION: dict[str, Any] = {
     "description": (
         "Busca al cliente en la base de afiliados por su número de documento. "
         "Si el documento no existe en la base (o no se entrega), construye su "
-        "perfil con los datos que el cliente haya declarado en la "
-        "conversación sobre su hogar (tipo de propiedad, zona, estrato, rango "
-        "de edad, si tiene familia). Devuelve si es afiliado, la fuente del "
+        "perfil con lo que el cliente haya declarado en la conversación "
+        "(hogar: tipo de propiedad, zona, estrato, rango de edad, si tiene "
+        "familia; y otras señales: si tiene hijos, si tiene vehículo, si "
+        "tiene un crédito vigente). Devuelve si es afiliado, la fuente del "
         "perfil ('base' o 'declarado') y el perfil resuelto."
     ),
     "parameters": {
@@ -106,6 +107,24 @@ _PERFILAR_CLIENTE_DECLARATION: dict[str, Any] = {
                 "type": "boolean",
                 "description": "Si el cliente declara tener familia a cargo.",
             },
+            "has_children": {
+                "type": "boolean",
+                "description": (
+                    "Si el cliente declara tener hijos o dependientes a "
+                    "cargo."
+                ),
+            },
+            "has_vehicle": {
+                "type": "boolean",
+                "description": "Si el cliente declara tener carro o moto propios.",
+            },
+            "has_credit": {
+                "type": "boolean",
+                "description": (
+                    "Si el cliente declara tener un crédito vigente "
+                    "(hipotecario, libre inversión, etc.)."
+                ),
+            },
         },
     },
 }
@@ -119,6 +138,9 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         stratum=args.get("stratum"),
         age_range=args.get("age_range"),
         has_family=args.get("has_family"),
+        has_children=args.get("has_children"),
+        has_vehicle=args.get("has_vehicle"),
+        has_credit=args.get("has_credit"),
     )
     has_declared_data = any(
         value is not None
@@ -128,6 +150,9 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
             declared.stratum,
             declared.age_range,
             declared.has_family,
+            declared.has_children,
+            declared.has_vehicle,
+            declared.has_credit,
         )
     )
 
@@ -148,6 +173,9 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         stratum=resolved.stratum,
         age_range=resolved.age_range,
         has_family=declared.has_family,
+        has_children=declared.has_children,
+        has_vehicle=declared.has_vehicle,
+        has_credit=declared.has_credit,
     )
     ctx.profile = profile
 

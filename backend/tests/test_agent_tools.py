@@ -174,6 +174,78 @@ class TestPerfilarClienteMinimalDefault:
         json.dumps(result)
 
 
+class TestPerfilarClienteSenalesDeclaradas:
+    """Señales adicionales (has_children/has_vehicle/has_credit) declaradas
+    por el usuario en la conversación, sin depender de la base de afiliados.
+    """
+
+    def test_declaracion_incluye_senales_nuevas(self) -> None:
+        declarations = tool_declarations()
+        perfilar = next(
+            decl for decl in declarations if decl["name"] == "perfilar_cliente"
+        )
+        properties = perfilar["parameters"]["properties"]
+
+        for campo in ("has_children", "has_vehicle", "has_credit"):
+            assert campo in properties
+            assert properties[campo]["type"] == "boolean"
+
+    def test_captura_vehiculo_declarado(self) -> None:
+        ctx = ToolContext()
+
+        result = execute_tool(
+            "perfilar_cliente", {"has_vehicle": True}, ctx
+        )
+
+        assert ctx.profile.has_vehicle is True
+        assert result["profile"]["has_vehicle"] is True
+        assert result["fuente"] == "declarado"
+
+    def test_solo_senal_nueva_cuenta_como_dato_declarado(self) -> None:
+        ctx = ToolContext()
+
+        result = execute_tool(
+            "perfilar_cliente", {"has_credit": True}, ctx
+        )
+
+        assert ctx.profile.has_credit is True
+        assert result["profile"]["has_credit"] is True
+
+    def test_senales_ausentes_quedan_none(self) -> None:
+        ctx = ToolContext()
+
+        execute_tool(
+            "perfilar_cliente", {"property_type": "house"}, ctx
+        )
+
+        assert ctx.profile.has_children is None
+        assert ctx.profile.has_vehicle is None
+        assert ctx.profile.has_credit is None
+
+    def test_resultado_json_safe_con_senales(self) -> None:
+        ctx = ToolContext()
+
+        result = execute_tool(
+            "perfilar_cliente",
+            {"has_children": True, "has_vehicle": True, "has_credit": True},
+            ctx,
+        )
+
+        json.dumps(result)
+
+    def test_captura_hijos_declarados(self) -> None:
+        ctx = ToolContext()
+
+        execute_tool(
+            "perfilar_cliente",
+            {"has_children": True, "has_family": True},
+            ctx,
+        )
+
+        assert ctx.profile.has_children is True
+        assert ctx.profile.has_family is True
+
+
 class TestExecuteToolUnknownName:
     def test_unknown_tool_returns_error_dict_without_raising(self) -> None:
         ctx = ToolContext()
