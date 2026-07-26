@@ -62,6 +62,8 @@ class ConversationService:
                     has_children=affiliate.has_children,
                     has_vehicle=affiliate.has_vehicle,
                     has_credit=affiliate.has_credit,
+                    source="base",
+                    gender=affiliate.gender,
                 )
 
         session = ConversationResponse(

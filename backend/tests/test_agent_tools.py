@@ -425,11 +425,15 @@ class TestToolDeclarationsPhase3:
         assert "ajustar_comparar" in names
         assert "cerrar_venta" in names
 
-    def test_has_six_unique_declarations_with_required_keys(self) -> None:
+    def test_has_eight_unique_declarations_with_required_keys(self) -> None:
+        # Nota (merge A4+B5): a las 5 tools base se sumaron de forma aditiva
+        # `enriquecer_perfil` (plan A4) y `campos_pendientes` +
+        # `consultar_vehiculo` (plan B5) — 8 tools en total, todas con
+        # nombre único.
         declarations = tool_declarations()
         names = [decl["name"] for decl in declarations]
 
-        assert len(declarations) == 6
+        assert len(declarations) == 8
         assert len(names) == len(set(names))
         for decl in declarations:
             assert "name" in decl
