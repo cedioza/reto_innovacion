@@ -164,6 +164,7 @@ def _apply_enriched_field(profile: ProfileData, campo: str, valor: str) -> None:
         profile.has_credit = valor == "si"
     elif campo == "tipo_vivienda":
         profile.property_type = valor
+    # nombre: personalización, no señal — no toca ProfileData
 
 
 def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
@@ -292,6 +293,7 @@ def _perfilar_cliente(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         "afiliado": afiliado,
         "fuente": fuente,
         "profile": profile.model_dump(),
+        "datos_enriquecidos": enriched,
     }
 
 
@@ -574,8 +576,10 @@ _ENRIQUECER_PERFIL_DECLARATION: dict[str, Any] = {
         "Registra un dato personal nuevo que el cliente mencione en la "
         "conversación (hijos, mascota, vehículo, crédito, ocupación, "
         "hábitos como fumar, tipo de vivienda) para enriquecer su perfil de "
-        "forma persistente. Úsala APENAS el cliente lo mencione, ANTES de "
-        "recomendar o cotizar; un dato por llamada."
+        "forma persistente. También registra el nombre del cliente cuando "
+        "se presenta (campo 'nombre'), para poder saludarlo por su nombre "
+        "en turnos siguientes. Úsala APENAS el cliente lo mencione, ANTES "
+        "de recomendar o cotizar; un dato por llamada."
     ),
     "parameters": {
         "type": "object",
@@ -583,6 +587,7 @@ _ENRIQUECER_PERFIL_DECLARATION: dict[str, Any] = {
             "campo": {
                 "type": "string",
                 "enum": [
+                    "nombre",
                     "hijos",
                     "mascota",
                     "vehiculo",
