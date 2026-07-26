@@ -45,3 +45,62 @@ class TriggerResponse(BaseModel):
     serie: str
     producto: CohortProduct
     mensaje_apertura: str
+
+
+# -- DTOs de respuesta para GET /panel/metricas (plan G5, funnel de ventas) --
+
+
+class FunnelEtapas(BaseModel):
+    recomendado: int
+    cotizado: int
+    consentimiento: int
+    comprado: int
+
+
+class FunnelTasas(BaseModel):
+    cotizado_sobre_recomendado: float
+    consentimiento_sobre_cotizado: float
+    comprado_sobre_consentimiento: float
+    comprado_sobre_recomendado: float
+
+
+class FunnelProducto(BaseModel):
+    product_id: str
+    product_name: str
+    categoria: str
+    etapas: FunnelEtapas
+    tasas: FunnelTasas
+
+
+class MetricasTotales(BaseModel):
+    conversaciones: int
+    recomendadas: int
+    cotizadas: int
+    con_consentimiento: int
+    compradas: int
+    conversion_global: float
+
+
+class CorteBucket(BaseModel):
+    conversaciones: int
+    compradas: int
+    conversion: float
+
+
+class CorteAfiliacion(BaseModel):
+    """Partición de las conversaciones por `profile.source`.
+
+    `source == "base"` cae en el bucket `base`; cualquier otro valor,
+    incluido `None` (perfil declarado sin `source` explícito, como el que
+    deja `app.scripts.seed_demo.sembrar`), cae en `declarado`.
+    """
+
+    base: CorteBucket
+    declarado: CorteBucket
+
+
+class MetricasResponse(BaseModel):
+    fuente: str
+    totales: MetricasTotales
+    funnel_por_producto: list[FunnelProducto]
+    corte_afiliacion: CorteAfiliacion

@@ -79,6 +79,10 @@ class ConversationService:
     def get(self, session_id: str) -> ConversationResponse | None:
         return self._repo.find(session_id)
 
+    def list_all(self) -> list[ConversationResponse]:
+        """Todas las conversaciones válidas, para el panel de métricas."""
+        return self._repo.list_all()
+
     # -- profile update ------------------------------------------------------
 
     def update_profile(
