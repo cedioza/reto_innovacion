@@ -66,7 +66,13 @@ def init_db(engine: Engine | None = None) -> None:
     Importa los módulos de modelos para que su metadata quede registrada
     antes de llamar a `create_all`.
     """
-    from app.models import affiliate_record, application, channel, conversation  # noqa: F401
+    from app.models import (  # noqa: F401
+        affiliate_record,
+        application,
+        channel,
+        conversation,
+        enriched_field,
+    )
 
     SQLModel.metadata.create_all(engine or get_engine())
 
