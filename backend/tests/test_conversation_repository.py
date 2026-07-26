@@ -1,6 +1,15 @@
-"""Tests for in-memory conversation repository."""
+"""Tests for the DB-backed conversation repository.
+
+Corren contra SQLite in-memory por velocidad/CI; el shape es compatible con
+Postgres (criterio C3: mismo repo, mismo contrato de tipos, distinto engine
+subyacente).
+"""
+
+from sqlalchemy.pool import StaticPool
+from sqlmodel import create_engine
 
 from app.repositories.conversations import ConversationRepository
+from app.repositories.db import init_db
 from app.schemas.conversation import (
     ConversationResponse,
     ConversationState,
@@ -10,7 +19,13 @@ from app.schemas.conversation import (
 
 class TestConversationRepository:
     def setup_method(self) -> None:
-        self.repo = ConversationRepository()
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        init_db(self.engine)
+        self.repo = ConversationRepository(engine=self.engine)
 
     def _session(self, sid: str = "sess-1") -> ConversationResponse:
         return ConversationResponse(
@@ -55,3 +70,27 @@ class TestConversationRepository:
         self.repo.save(a.session_id, a)
         self.repo.save(b.session_id, b)
         assert self.repo.count() == 2
+
+    def test_survives_repository_recreation(self) -> None:
+        s = ConversationResponse(
+            session_id="sess-persist",
+            state=ConversationState.COLLECTING_PROFILE,
+            messages=[
+                Message(role="user", content="Hola"),
+                Message(role="assistant", content="Cuéntame sobre tu hogar"),
+            ],
+            next_action="Tell us about your home",
+        )
+        self.repo.save(s.session_id, s)
+
+        second_repo = ConversationRepository(engine=self.engine)
+        found = second_repo.find("sess-persist")
+
+        assert found is not None
+        assert found.session_id == "sess-persist"
+        assert [m.role for m in found.messages] == [
+            m.role for m in s.messages
+        ]
+        assert [m.content for m in found.messages] == [
+            m.content for m in s.messages
+        ]

@@ -8,6 +8,9 @@ venv/
 .pytest_cache/
 .mypy_cache/
 
+# BD SQLite local (fallback de desarrollo sin DATABASE_URL)
+backend/app/data/local.db
+
 # Node / Vue
 node_modules/
 dist/

@@ -130,6 +130,34 @@ def test_ycloud_webhook_returns_5xx_when_processing_fails(monkeypatch):
     assert response.json() == {"detail": "Webhook processing failed"}
 
 
+def test_ycloud_webhook_failed_delivery_does_not_mark_event_processed(monkeypatch):
+    """Si `send_whatsapp_message` falla, el evento no debe quedar marcado
+    como procesado en la BD: un reintento del proveedor con el mismo
+    `event_id` debe volver a intentar la entrega."""
+    monkeypatch.setattr(settings, "ycloud_webhook_secret", "")
+    monkeypatch.setattr(settings, "ycloud_allow_unsigned_webhooks", True)
+    handled = []
+    monkeypatch.setattr(
+        webhooks._handler,
+        "handle_incoming",
+        lambda *args: handled.append(args) or "Respuesta",
+    )
+
+    payload = _ycloud_payload()
+    payload["id"] = "evt_retry_after_failure"
+
+    monkeypatch.setattr(webhooks, "send_whatsapp_message", lambda *args: False)
+    first = client.post("/api/v1/webhooks/ycloud/whatsapp", json=payload)
+    assert first.status_code == 502
+    assert webhooks._handler.was_event_processed("evt_retry_after_failure") is False
+
+    monkeypatch.setattr(webhooks, "send_whatsapp_message", lambda *args: True)
+    second = client.post("/api/v1/webhooks/ycloud/whatsapp", json=payload)
+    assert second.status_code == 200
+    assert len(handled) == 2
+    assert webhooks._handler.was_event_processed("evt_retry_after_failure") is True
+
+
 def test_ycloud_webhook_deduplicates_event_in_process(monkeypatch):
     monkeypatch.setattr(settings, "ycloud_webhook_secret", "")
     monkeypatch.setattr(settings, "ycloud_allow_unsigned_webhooks", True)

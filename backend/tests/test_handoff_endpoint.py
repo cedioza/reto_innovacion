@@ -114,10 +114,13 @@ class TestHandoffPorCaminoRest:
 # ---------------------------------------------------------------------------
 # 2: camino tool -- cerrar_venta (execute_tool) -> GET /handoff/{token} -> 200.
 #
-# Este es el test que FIJA el singleton compartido: hoy `_cerrar_venta`
-# instancia `ConsentService()` nueva por llamada, con su propio
-# `ApplicationRepository` en memoria, así que el token nunca resuelve contra
-# el repositorio que usa el router del handoff (el de `conversation_service`).
+# Este es el test que FIJA el singleton compartido `consent_service` (ver
+# `app/services/consent.py`): tanto `agent_tools._cerrar_venta` como el
+# router de `/consent` resuelven contra la misma instancia, y por tanto
+# contra el mismo `ApplicationRepository`. Con `ApplicationRepository`
+# persistido en la tabla `solicitudes` (SQLModel/DB, no en memoria), el token
+# generado por cualquiera de los dos caminos queda escrito en la misma tabla
+# y se resuelve por igual desde el router del handoff.
 # ---------------------------------------------------------------------------
 
 
