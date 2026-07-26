@@ -122,6 +122,34 @@ determinista. **Deuda conocida**: en producción este disparo sería
 batch/orientado a evento y saldría por el canal real (WhatsApp); en el
 hackathon se simula manualmente desde el panel, sobre el canal web.
 
+## Canales (F1)
+
+Todo canal (WhatsApp, Telegram, o cualquier canal futuro) implementa el mismo
+contrato de adaptador (`app/services/channels/base.py`):
+
+- **Entrada**: `parse_incoming(payload) -> InboundMessage | None` traduce el
+  payload crudo del proveedor al trío `(channel, user_ref, text)` — `None` si
+  el payload no trae un mensaje reconocible, sin lanzar excepciones.
+- **Salida**: `deliver(user_ref, text) -> bool` traduce el texto de respuesta
+  del orquestador (una sola cadena, sin formato) al límite/formato propio del
+  canal (WhatsApp: `split_text` a 4096 caracteres + `markdown_bold_to_whatsapp`)
+  y lo entrega, cortando en el primer envío fallido.
+
+`app.services.channel_gateway.handle(channel, user_ref, text)` es el punto
+único de entrada al orquestador para cualquier adaptador: resuelve (o crea)
+la sesión de conversación de `(channel, user_ref)` y devuelve el texto de
+respuesta. Con `GEMINI_API_KEY` sin configurar (hasta H5), cae a un
+**fallback regex** (`ChannelHandler`, máquina de estados legada) — al
+completarse H5 el orquestador conversacional pasa a ser la única vía.
+
+El webhook de Meta (`POST /api/v1/webhooks/whatsapp`) ya está recableado
+sobre `MetaWhatsAppAdapter` + `channel_gateway.handle` como referencia del
+patrón. **Deuda conocida**: YCloud y Telegram siguen con su camino legado
+(`ChannelHandler.handle_incoming` inline) y se enchufan al contrato de
+adaptador en F4/F5; dedupe por `message.id` de Meta (Cloud API no lo
+deduplica hoy, a diferencia de YCloud que ya tiene `eventos_procesados`)
+queda como follow-up.
+
 ## Arquitectura de capas
 
 ```

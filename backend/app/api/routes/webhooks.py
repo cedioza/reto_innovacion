@@ -8,12 +8,15 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
+from app.services import channel_gateway
 from app.services.channel_handler import ChannelHandler
+from app.services.channels.meta_whatsapp import MetaWhatsAppAdapter
 from app.services.telegram_client import send_telegram_message, set_telegram_webhook
 from app.services.whatsapp_provider import send_whatsapp_message
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 _handler = ChannelHandler()
+_meta_adapter = MetaWhatsAppAdapter()
 
 
 @router.get("/whatsapp")
@@ -35,35 +38,14 @@ async def verify_whatsapp_webhook(request: Request):
 @router.post("/whatsapp")
 async def receive_whatsapp(payload: dict):
     try:
-        entry = payload.get("entry", [])
-        if not entry:
+        inbound = _meta_adapter.parse_incoming(payload)
+        if inbound is None:
             return {"status": "ok"}
 
-        changes = entry[0].get("changes", [])
-        if not changes:
-            return {"status": "ok"}
-
-        value = changes[0].get("value", {})
-        messages = value.get("messages", [])
-
-        if not messages:
-            return {"status": "ok"}
-
-        msg = messages[0]
-        phone = msg.get("from", "")
-        msg_type = msg.get("type", "")
-        text = ""
-
-        if msg_type == "text":
-            text = msg.get("text", {}).get("body", "")
-        elif msg_type == "interactive":
-            interactive = msg.get("interactive", {})
-            button_reply = interactive.get("button_reply", {})
-            text = button_reply.get("title", "")
-
-        if text:
-            response = _handler.handle_incoming("whatsapp", phone, text)
-            send_whatsapp_message(phone, response)
+        response = await run_in_threadpool(
+            channel_gateway.handle, inbound.channel, inbound.user_ref, inbound.text
+        )
+        await run_in_threadpool(_meta_adapter.deliver, inbound.user_ref, response)
     except Exception:
         pass
 
